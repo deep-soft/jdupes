@@ -74,6 +74,10 @@ ifeq ($(OS), Windows_NT)
 	endif
 endif
 
+ifdef ON_WINDOWS
+PROGRAM_NAME = jdupes.exe
+endif
+
 # Debugging code inclusion
 ifdef LOUD
 DEBUG=1
