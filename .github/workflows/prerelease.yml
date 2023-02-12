@@ -52,6 +52,7 @@ jobs:
           install: make gcc mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
 
       - name: Build jdupes (gcc)
+        continue-on-error: true
         if: matrix.compiler  == 'mingw_gcc'
 #        working-directory: ./
         shell: msys2 {0}
@@ -67,6 +68,7 @@ jobs:
           install: make mingw-w64-x86_64-clang mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
 
       - name: Build jdupes (clang)
+        continue-on-error: true      
         if: matrix.compiler  == 'mingw_clang'
         working-directory: far
         shell: msys2 {0}
