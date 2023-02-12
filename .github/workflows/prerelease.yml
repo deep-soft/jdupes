@@ -1,0 +1,101 @@
+name: Build release mingw
+
+on:
+#  push:
+#    branches: [ master ]
+#  pull_request:
+#    branches: [ master ]
+  workflow_dispatch:    
+
+env:
+  TAG_NAME: "build-release-mingw"
+jobs:
+  build-mingw:
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        build: [
+#                 mingw_gcc_x64_debug,
+                 mingw_gcc_x64_release,
+#                 mingw_clang_x64_debug,
+                 mingw_clang_x64_release
+               ]
+
+        include:
+#          - { build: mingw_gcc_x64_debug,     compiler: mingw_gcc,   arch: amd64, build_config: Debug }
+          - { build: mingw_gcc_x64_release,   compiler: mingw_gcc,   arch: amd64, build_config: Release }
+#          - { build: mingw_clang_x64_Debug,   compiler: mingw_clang, arch: amd64, build_config: Debug }
+          - { build: mingw_clang_x64_Release, compiler: mingw_clang, arch: amd64, build_config: Release }
+
+    steps:
+      - name: Checkout source
+        uses: deep-soft/checkout@v3
+
+      - name: Initialize CodeQL
+        if: matrix.build == 'mingw_gcc_x64_debug'
+        uses: github/codeql-action/init@v2
+        with:
+          languages: cpp
+
+      - name: Set environment for debug build
+        if: matrix.build_config  == 'Debug'
+        run: |
+          Add-Content -Path $env:GITHUB_ENV -Value "DEBUG=1"
+          Add-Content -Path $env:GITHUB_ENV -Value "USE_LLD=1"
+
+      - name: Install GCC x64
+        if: matrix.compiler  == 'mingw_gcc'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: make gcc mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
+
+      - name: Build jdupes (gcc)
+        if: matrix.compiler  == 'mingw_gcc'
+#        working-directory: ./
+        shell: msys2 {0}
+        run: |
+          gcc --version
+          make -j4 -f Makefile static_stripped
+
+      - name: Install Clang x64
+        if: matrix.compiler  == 'mingw_clang'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: make mingw-w64-x86_64-clang mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
+
+      - name: Build jdupes (clang)
+        if: matrix.compiler  == 'mingw_clang'
+        working-directory: far
+        shell: msys2 {0}
+        run: |
+          clang --version
+          make -j4 CLANG=1 -f Makefile static_stripped
+
+      - name: Perform CodeQL Analysis
+        if: matrix.build == 'mingw_gcc_x64_debug'
+        uses: github/codeql-action/analyze@v2
+
+      - name: List files
+        continue-on-error: true
+        run: |
+          dir ./
+          7z a ./jdupes-${{ matrix.compiler }}.zip jdupes*.exe
+          dir ./
+
+      - name: Upload zip
+        continue-on-error: true
+        uses: deep-soft/upload-artifact@main
+        with:
+          name: ./jdupes-${{ matrix.compiler }}.zip
+          path: ./jdupes-${{ matrix.compiler }}.zip
+
+      - name: Publish
+        continue-on-error: true
+        uses: deep-soft/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          files: |
+            ./jdupes-${{ matrix.compiler }}.zip
