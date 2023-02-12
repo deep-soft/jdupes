@@ -70,7 +70,7 @@ jobs:
       - name: Build jdupes (clang)
         continue-on-error: true      
         if: matrix.compiler  == 'mingw_clang'
-        working-directory: far
+#        working-directory: ./
         shell: msys2 {0}
         run: |
           clang --version
