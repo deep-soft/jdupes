@@ -84,7 +84,7 @@ jobs:
         continue-on-error: true
         run: |
           dir ./
-          7z a ./jdupes-${{ matrix.compiler }}.zip jdupes*.exe
+          7z a jdupes-${{ matrix.compiler }}.zip jdupes*.exe
           dir ./
 
       - name: Upload zip
