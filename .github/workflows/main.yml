@@ -1,10 +1,11 @@
 name: ci
 
 on:
-  push:
-    branches:
-      - 'master'
-      - 'github-action'
+  workflow_dispatch:
+#  push:
+#    branches:
+#      - 'master'
+#      - 'github-action'
 
 jobs:
   docker:
