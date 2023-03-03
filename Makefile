@@ -1,8 +1,6 @@
 # jdupes Makefile
 
-#####################################################################
-# Standand User Configuration Section                               #
-#####################################################################
+CFLAGS ?= -O2 -g
 
 # PREFIX determines where files will be installed. Common examples
 # include "/usr" or "/usr/local".
@@ -24,10 +22,6 @@ PREFIX = /usr/local
 # This can be enabled at build time: 'make HARDEN=1'
 #HARDEN=1
 
-#####################################################################
-# Developer Configuration Section                                   #
-#####################################################################
-
 # PROGRAM_NAME determines the installation name and manual page name
 PROGRAM_NAME = jdupes
 
@@ -42,28 +36,27 @@ MAN_DIR = $(MAN_BASE_DIR)/man1
 MAN_EXT = 1
 
 # Required External Tools
-INSTALL = install	# install : UCB/GNU Install compatible
-#INSTALL = ginstall
+CC ?= gcc
+INSTALL = install
 RM      = rm -f
 RMDIR	= rmdir -p
 MKDIR   = mkdir -p
-#MKDIR   = mkdirhier
-#MKDIR   = mkinstalldirs
 
 # Make Configuration
-CC ?= gcc
 COMPILER_OPTIONS = -Wall -Wwrite-strings -Wcast-align -Wstrict-aliasing -Wstrict-prototypes -Wpointer-arith -Wundef
 COMPILER_OPTIONS += -Wshadow -Wfloat-equal -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wconversion -Wunreachable-code -Wformat=2
-COMPILER_OPTIONS += -std=gnu99 -O2 -g -D_FILE_OFFSET_BITS=64 -fstrict-aliasing -pipe
+COMPILER_OPTIONS += -std=gnu99 -D_FILE_OFFSET_BITS=64 -fstrict-aliasing -pipe
 COMPILER_OPTIONS += -DSMA_MAX_FREE=11 -DNO_ATIME
 
-#####################################################################
-# no need to modify anything beyond this point                      #
-#####################################################################
+UNAME_S=$(shell uname -s)
 
-# Don't use unsupported compiler options on gcc 3/4 (OS X 10.5.8 Xcode)
-GCCVERSION = $(shell expr `LC_ALL=C gcc -v 2>&1 | grep 'gcc version ' | cut -d\  -f3 | cut -d. -f1` \>= 5)
-ifeq "$(GCCVERSION)" "1"
+# Don't use unsupported compiler options on gcc 3/4 (Mac OS X 10.5.8 Xcode)
+ifeq ($(UNAME_S), Darwin)
+	GCCVERSION = $(shell expr `LC_ALL=C gcc -v 2>&1 | grep 'gcc version ' | cut -d\  -f3 | cut -d. -f1` \>= 5)
+else
+	GCCVERSION = 1
+endif
+ifeq ($(GCCVERSION), 1)
 	COMPILER_OPTIONS += -Wextra -Wstrict-overflow=5 -Winit-self
 endif
 
@@ -100,8 +93,6 @@ ifneq (,$(findstring DENABLE_DEDUPE,$(CFLAGS) $(CFLAGS_EXTRA)))
 	ENABLE_DEDUPE=1
 endif
 
-UNAME_S=$(shell uname -s)
-
 # MinGW needs this for printf() conversions to work
 ifdef ON_WINDOWS
 	ifndef NO_UNICODE
@@ -119,16 +110,6 @@ ifdef ON_WINDOWS
 	override undefine ENABLE_DEDUPE
 endif
 
-# Stack size limit can be too small for deep directory trees, so set to 16 MiB
-# The ld syntax for Windows is the same for both Cygwin and MinGW
-ifeq ($(OS), Windows_NT)
-COMPILER_OPTIONS += -Wl,--stack=16777216
-else ifeq ($(UNAME_S), Darwin)
-COMPILER_OPTIONS += -Wl,-stack_size -Wl,0x1000000
-else
-COMPILER_OPTIONS += -Wl,-z,stack-size=16777216
-endif
-
 # Bare-bones mode (for the adventurous lunatic) - includes all LOW_MEMORY options
 ifdef BARE_BONES
 LOW_MEMORY=1
@@ -138,21 +119,48 @@ endif
 
 # Low memory mode
 ifdef LOW_MEMORY
+USE_JODY_HASH = 1
 COMPILER_OPTIONS += -DLOW_MEMORY -DSMA_PAGE_SIZE=32768
 COMPILER_OPTIONS += -DNO_HARDLINKS -DNO_SYMLINKS -DNO_USER_ORDER -DNO_PERMS
 COMPILER_OPTIONS += -DNO_ATIME -DNO_JSON -DNO_EXTFILTER -DNO_CHUNKSIZE
-COMPILER_OPTIONS += -DUSE_JODY_HASH -DNO_NUMSORT
+COMPILER_OPTIONS += -DNO_NUMSORT
 ifndef BARE_BONES
 COMPILER_OPTIONS += -DCHUNK_SIZE=16384
 endif
 endif
 
+# Use jody_hash instead of xxHash if requested
+ifdef USE_JODY_HASH
+COMPILER_OPTIONS += -DUSE_JODY_HASH
+ifndef EXTERNAL_HASH_LIB
+OBJS += jody_hash.o
+endif
+OBJS_CLEAN += xxhash.o
+else
+ifndef EXTERNAL_HASH_LIB
+OBJS += xxhash.o
+endif
+OBJS_CLEAN += jody_hash.o
+endif  # USE_JODY_HASH
+
+# Stack size limit can be too small for deep directory trees, so set to 16 MiB
+# The ld syntax for Windows is the same for both Cygwin and MinGW
+ifndef LOW_MEMORY
+ifeq ($(OS), Windows_NT)
+COMPILER_OPTIONS += -Wl,--stack=16777216
+else ifeq ($(UNAME_S), Darwin)
+COMPILER_OPTIONS += -Wl,-stack_size -Wl,0x1000000
+else
+COMPILER_OPTIONS += -Wl,-z,stack-size=16777216
+endif
+endif
+
 # Don't do clonefile on Mac OS X < 10.13 (High Sierra)
 ifeq ($(UNAME_S), Darwin)
-	DARWINVER := $(shell expr `uname -r | cut -d. -f1` \< 17)
-	ifeq "$(DARWINVER)" "1"
-		COMPILER_OPTIONS += -DNO_CLONEFILE=1
-	endif
+DARWINVER := $(shell expr `uname -r | cut -d. -f1` \< 17)
+ifeq "$(DARWINVER)" "1"
+COMPILER_OPTIONS += -DNO_CLONEFILE=1
+endif
 endif
 
 # Compatibility mappings for dedupe feature
@@ -186,7 +194,6 @@ INSTALL_DATA    = $(INSTALL) -m 0644
 OBJS += jdupes.o jody_paths.o jody_sort.o jody_win_unicode.o jody_strtoepoch.o string_malloc.o oom.o
 OBJS += jody_cacheinfo.o
 OBJS += act_deletefiles.o act_linkfiles.o act_printmatches.o act_summarize.o act_printjson.o
-OBJS += xxhash.o jody_hash.o
 OBJS += $(ADDITIONAL_OBJECTS)
 
 all: $(PROGRAM_NAME)
