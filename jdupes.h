@@ -83,7 +83,7 @@ extern "C" {
 #endif /* UNICODE */
 
 #ifdef ON_WINDOWS
- #include "win_stat.h"
+ #include "jody_win_stat.h"
 #endif
 
 #ifndef NO_SYMLINKS
@@ -295,7 +295,6 @@ extern char tempname[PATHBUF_SIZE * 2];
 
 extern const char *extensions[];
 
-extern void nullptr(const char * restrict func);
 extern int file_has_changed(file_t * const restrict file);
 extern int getdirstats(const char * const restrict name,
         jdupes_ino_t * const restrict inode, dev_t * const restrict dev,

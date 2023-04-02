@@ -339,17 +339,6 @@ void clean_exit(void)
 }
 
 
-/* Null pointer failure */
-extern void nullptr(const char * restrict func)
-{
-  static const char n[] = "(NULL)";
-  if (func == NULL) func = n;
-  fprintf(stderr, "\ninternal error: NULL pointer passed to %s\n", func);
-  string_malloc_destroy();
-  exit(EXIT_FAILURE);
-}
-
-
 static inline char **cloneargs(const int argc, char **argv)
 {
   static int x;
@@ -1649,12 +1638,12 @@ static int sort_pairs_by_mtime(file_t *f1, file_t *f2)
   if (f1->mtime < f2->mtime) return -sort_direction;
   else if (f1->mtime > f2->mtime) return sort_direction;
 
-#ifndef NO_NUMSORT
+#ifndef NO_JODY_SORT
   /* If the mtimes match, use the names to break the tie */
-  return numeric_sort(f1->d_name, f2->d_name, sort_direction);
+  return jody_numeric_sort(f1->d_name, f2->d_name, sort_direction);
 #else
   return strcmp(f1->d_name, f2->d_name) ? -sort_direction : sort_direction;
-#endif /* NO_NUMSORT */
+#endif /* NO_JODY_SORT */
 }
 #endif
 
@@ -1668,11 +1657,11 @@ static int sort_pairs_by_filename(file_t *f1, file_t *f2)
   if (po != 0) return po;
 #endif /* NO_USER_ORDER */
 
-#ifndef NO_NUMSORT
-  return numeric_sort(f1->d_name, f2->d_name, sort_direction);
+#ifndef NO_JODY_SORT
+  return jody_numeric_sort(f1->d_name, f2->d_name, sort_direction);
 #else
   return strcmp(f1->d_name, f2->d_name) ? -sort_direction : sort_direction;
-#endif /* NO_NUMSORT */
+#endif /* NO_JODY_SORT */
 }
 
 
@@ -2205,8 +2194,12 @@ int main(int argc, char **argv)
         if (sizeof(long) == 4) printf("64-bit i32\n");
         else if (sizeof(long) == 8) printf("64-bit\n");
       } else if (sizeof(uintptr_t) == 4) {
-        if (sizeof(long) == 4) printf("32-bit\n");
-        else if (sizeof(long) == 8) printf("32-bit i64\n");
+        if (sizeof(long) == 4) printf("32-bit");
+        else if (sizeof(long) == 8) printf("32-bit i64");
+#if defined(__x86_64__) && SIZE_MAX == 0xffffffff
+	printf(" (x32 ABI)");
+#endif
+	printf("\n");
       } else printf("%u-bit i%u\n", (unsigned int)(sizeof(uintptr_t) * 8),
           (unsigned int)(sizeof(long) * 8));
 
