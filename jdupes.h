@@ -27,14 +27,10 @@ extern "C" {
 #include <stdint.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "string_malloc.h"
-#include "jody_sort.h"
-#include "version.h"
+#include <libjodycode.h>
 
 #ifndef USE_JODY_HASH
 #include "xxhash.h"
-#else
-#include "jody_hash.h"
 #endif /* USE_JODY_HASH */
 
 /* Set hash type (change this if swapping in a different hash function) */
@@ -70,10 +66,14 @@ extern "C" {
 /* Windows + Unicode compilation */
 #ifdef UNICODE
  #ifndef PATHBUF_SIZE
-  #define WPATH_MAX 8192
+  #ifndef WPATH_MAX
+   #define WPATH_MAX 8192
+  #endif
   #define PATHBUF_SIZE WPATH_MAX
  #else
-  #define WPATH_MAX PATHBUF_SIZE
+  #ifndef WPATH_MAX
+   #define WPATH_MAX PATHBUF_SIZE
+  #endif
  #endif /* PATHBUF_SIZE */
   typedef wchar_t wpath_t[WPATH_MAX];
   extern int out_mode;
@@ -82,17 +82,19 @@ extern "C" {
  #define W2M(a,b) WideCharToMultiByte(CP_UTF8, 0, a, -1, (LPSTR)b, WPATH_MAX, NULL, NULL)
 #endif /* UNICODE */
 
-#ifdef ON_WINDOWS
- #include "jody_win_stat.h"
-#endif
-
-#ifndef NO_SYMLINKS
-#include "jody_paths.h"
-#endif
-
 #define ISFLAG(a,b) ((a & b) == b)
 #define SETFLAG(a,b) (a |= b)
 #define CLEARFLAG(a,b) (a &= (~b))
+
+/* Chunk sizing */
+#ifndef CHUNK_SIZE
+ #define CHUNK_SIZE 65536
+#endif
+#ifndef NO_CHUNKSIZE
+ /* Larger chunk size makes large files process faster but uses more RAM */
+ #define MIN_CHUNK_SIZE 4096
+ #define MAX_CHUNK_SIZE 1048576 * 256
+#endif /* NO_CHUNKSIZE */
 
 /* Low memory option overrides */
 #ifdef LOW_MEMORY
@@ -114,39 +116,37 @@ extern "C" {
 /* Compile out debugging stat counters unless requested */
 #ifdef DEBUG
  #define DBG(a) a
- #ifndef TREE_DEPTH_STATS
-  #define TREE_DEPTH_STATS
- #endif
 #else
  #define DBG(a)
 #endif
 
 
 /* Behavior modification flags */
-extern uint_fast32_t flags, a_flags;
-#define F_RECURSE		(1U << 0)
-#define F_HIDEPROGRESS		(1U << 1)
-#define F_SOFTABORT		(1U << 2)
-#define F_FOLLOWLINKS		(1U << 3)
-#define F_INCLUDEEMPTY		(1U << 4)
-#define F_CONSIDERHARDLINKS	(1U << 5)
-#define F_RECURSEAFTER		(1U << 6)
-#define F_NOPROMPT		(1U << 7)
-#define F_EXCLUDEHIDDEN		(1U << 8)
-#define F_PERMISSIONS		(1U << 9)
-#define F_EXCLUDESIZE		(1U << 10)
-#define F_QUICKCOMPARE		(1U << 11)
-#define F_USEPARAMORDER		(1U << 12)
-#define F_REVERSESORT		(1U << 13)
-#define F_ISOLATE		(1U << 14)
-#define F_ONEFS			(1U << 15)
-#define F_PARTIALONLY		(1U << 16)
-#define F_NOCHANGECHECK		(1U << 17)
-#define F_NOTRAVCHECK		(1U << 18)
-#define F_SKIPHASH		(1U << 19)
-#define F_BENCHMARKSTOP		(1U << 29)
-#define F_LOUD			(1U << 30)
-#define F_DEBUG			(1U << 31)
+extern uint64_t flags, a_flags;
+#define F_RECURSE		(1ULL << 0)
+#define F_HIDEPROGRESS		(1ULL << 1)
+#define F_SOFTABORT		(1ULL << 2)
+#define F_FOLLOWLINKS		(1ULL << 3)
+#define F_INCLUDEEMPTY		(1ULL << 4)
+#define F_CONSIDERHARDLINKS	(1ULL << 5)
+#define F_RECURSEAFTER		(1ULL << 6)
+#define F_NOPROMPT		(1ULL << 7)
+#define F_EXCLUDEHIDDEN		(1ULL << 8)
+#define F_PERMISSIONS		(1ULL << 9)
+#define F_EXCLUDESIZE		(1ULL << 10)
+#define F_QUICKCOMPARE		(1ULL << 11)
+#define F_USEPARAMORDER		(1ULL << 12)
+#define F_REVERSESORT		(1ULL << 13)
+#define F_ISOLATE		(1ULL << 14)
+#define F_ONEFS			(1ULL << 15)
+#define F_PARTIALONLY		(1ULL << 16)
+#define F_NOCHANGECHECK		(1ULL << 17)
+#define F_NOTRAVCHECK		(1ULL << 18)
+#define F_SKIPHASH		(1ULL << 19)
+#define F_BENCHMARKSTOP		(1ULL << 29)
+
+#define F_LOUD			(1ULL << 62)
+#define F_DEBUG			(1ULL << 63)
 
 /* Action-related flags */
 #define FA_PRINTMATCHES		(1U << 0)
@@ -160,6 +160,7 @@ extern uint_fast32_t flags, a_flags;
 #define FA_MAKESYMLINKS		(1U << 8)
 #define FA_PRINTNULL		(1U << 9)
 #define FA_PRINTJSON		(1U << 10)
+#define FA_ERRORONDUPE		(1U << 11)
 
 /* Per-file true/false flags */
 #define FF_VALID_STAT		(1U << 0)
@@ -235,65 +236,17 @@ typedef struct _filetree {
 
 /* This gets used in many functions */
 #ifdef ON_WINDOWS
- extern struct winstat s;
- #define STAT win_stat
+ extern struct jc_winstat s;
+ #define STAT jc_win_stat
 #else
  extern struct stat s;
  #define STAT stat
 #endif
 
 
-#ifndef NO_EXTFILTER
-/* -X extended filter parameter stack */
-struct extfilter {
-  struct extfilter *next;
-  unsigned int flags;
-  int64_t size;  /* also used for other large integers */
-  char param[];
-};
-
-/* Extended filter parameter flags */
-#define XF_EXCL_EXT		0x00000001U
-#define XF_SIZE_EQ		0x00000002U
-#define XF_SIZE_GT		0x00000004U
-#define XF_SIZE_LT		0x00000008U
-#define XF_ONLY_EXT		0x00000010U
-#define XF_EXCL_STR		0x00000020U
-#define XF_ONLY_STR		0x00000040U
-#define XF_DATE_NEWER		0x00000080U
-#define XF_DATE_OLDER		0x00000100U
-/* The X-than-or-equal are combination flags */
-#define XF_SIZE_GTEQ		0x00000006U
-#define XF_SIZE_LTEQ		0x0000000aU
-
-/* Flags that use a numeric size with optional suffix */
-#define XF_REQ_NUMBER		0x0000000eU
-/* Flags that require a data parameter (after a colon) */
-#define XF_REQ_VALUE		0x0000001fU
-/* Flags that take a date that needs to be converted to time_t seconds */
-#define XF_REQ_DATE		0x00000180U
-
-/* Exclude definition array */
-struct extfilter_tags {
-  const char * const tag;
-  const uint32_t flags;
-};
-
-extern const struct extfilter_tags extfilter_tags[];
-extern struct extfilter *extfilter_head;
-#endif /* NO_EXTFILTER */
-
-
-/* Suffix definitions (treat as case-insensitive) */
-struct size_suffix {
-  const char * const suffix;
-  const int64_t multiplier;
-};
-
-extern const struct size_suffix size_suffix[];
 extern char tempname[PATHBUF_SIZE * 2];
 
-extern const char *extensions[];
+extern const char *feature_flags[];
 
 extern int file_has_changed(file_t * const restrict file);
 extern int getdirstats(const char * const restrict name,

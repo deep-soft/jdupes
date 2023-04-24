@@ -6,11 +6,12 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdint.h>
-#include <inttypes.h>
+#include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 #include "jdupes.h"
 #include "version.h"
-#include "jody_win_unicode.h"
+#include <libjodycode.h>
 #include "act_printjson.h"
 
 #define IS_CONT(a)  ((a & 0xc0) == 0x80)
@@ -112,8 +113,8 @@ extern void printjson(file_t * restrict files, const int argc, char **argv)
 {
   file_t * restrict tmpfile;
   int arg = 0, comma = 0, len = 0;
-  char *temp = string_malloc(PATH_MAX * 2);
-  char *temp2 = string_malloc(PATH_MAX * 2);
+  char *temp = malloc(PATH_MAX * 2);
+  char *temp2 = malloc(PATH_MAX * 2);
   char *temp_insert = temp;
 
   LOUD(fprintf(stderr, "printjson: %p\n", files));
@@ -131,9 +132,9 @@ extern void printjson(file_t * restrict files, const int argc, char **argv)
   json_escape(temp + 1, temp2); /* Skip the starting space */
   printf("%s\",\n", temp2);
   printf("  \"extensionFlags\": \"");
-  if (extensions[0] == NULL) printf("none\",\n");
-  else for (int c = 0; extensions[c] != NULL; c++)
-    printf("%s%s", extensions[c], extensions[c+1] == NULL ? "\",\n" : " ");
+  if (feature_flags[0] == NULL) printf("none\",\n");
+  else for (int c = 0; feature_flags[c] != NULL; c++)
+    printf("%s%s", feature_flags[c], feature_flags[c+1] == NULL ? "\",\n" : " ");
 
   printf("  \"matchSets\": [\n");
   while (files != NULL) {
@@ -142,14 +143,14 @@ extern void printjson(file_t * restrict files, const int argc, char **argv)
       printf("    {\n      \"fileSize\": %" PRIdMAX ",\n      \"fileList\": [\n        { \"filePath\": \"", (intmax_t)files->size);
       sprintf(temp, "%s", files->d_name);
       json_escape(temp, temp2);
-      fwprint(stdout, temp2, 0);
+      jc_fwprint(stdout, temp2, 0);
       printf("\"");
       tmpfile = files->duplicates;
       while (tmpfile != NULL) {
         printf(" },\n        { \"filePath\": \"");
         sprintf(temp, "%s", tmpfile->d_name);
         json_escape(temp, temp2);
-        fwprint(stdout, temp2, 0);
+        jc_fwprint(stdout, temp2, 0);
         printf("\"");
         tmpfile = tmpfile->duplicates;
       }
@@ -161,7 +162,7 @@ extern void printjson(file_t * restrict files, const int argc, char **argv)
 
   printf("\n  ]\n}\n");
 
-  string_free(temp); string_free(temp2);
+  free(temp); free(temp2);
   return;
 }
 

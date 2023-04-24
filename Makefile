@@ -6,10 +6,6 @@ CFLAGS ?= -O2 -g
 # include "/usr" or "/usr/local".
 PREFIX = /usr/local
 
-# Certain platforms do not support long options (command line options).
-# To disable long options, uncomment the following line.
-#CFLAGS += -DOMIT_GETOPT_LONG
-
 # Uncomment for -B/--dedupe.
 # This can also be enabled at build time: 'make ENABLE_DEDUPE=1'
 #CFLAGS += -DENABLE_DEDUPE
@@ -41,12 +37,25 @@ INSTALL = install
 RM      = rm -f
 RMDIR	= rmdir -p
 MKDIR   = mkdir -p
+INSTALL_PROGRAM = $(INSTALL) -m 0755
+INSTALL_DATA    = $(INSTALL) -m 0644
 
-# Make Configuration
+# Main object files
+OBJS += jdupes.o args.o helptext.o extfilter.o travcheck.o
+OBJS += act_deletefiles.o act_linkfiles.o act_printmatches.o act_summarize.o act_printjson.o
+
+# Configuration section
 COMPILER_OPTIONS = -Wall -Wwrite-strings -Wcast-align -Wstrict-aliasing -Wstrict-prototypes -Wpointer-arith -Wundef
 COMPILER_OPTIONS += -Wshadow -Wfloat-equal -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wconversion -Wunreachable-code -Wformat=2
 COMPILER_OPTIONS += -std=gnu99 -D_FILE_OFFSET_BITS=64 -fstrict-aliasing -pipe
-COMPILER_OPTIONS += -DSMA_MAX_FREE=11 -DNO_ATIME
+COMPILER_OPTIONS += -DNO_ATIME
+
+# Remove unused code if requested
+ifdef GC_SECTIONS
+COMPILER_OPTIONS += -fdata-sections -ffunction-sections
+LINK_OPTIONS += -Wl,--gc-sections
+endif
+
 
 UNAME_S=$(shell uname -s)
 
@@ -98,10 +107,9 @@ ifdef ON_WINDOWS
 	ifndef NO_UNICODE
 		UNICODE=1
 		COMPILER_OPTIONS += -municode
-		PROGRAM_SUFFIX=.exe
+		SUFFIX=.exe
 	endif
 	COMPILER_OPTIONS += -D__USE_MINGW_ANSI_STDIO=1 -DON_WINDOWS=1
-	OBJS += jody_win_stat.o
 	ifeq ($(UNAME_S), MINGW32_NT-5.1)
 		OBJS += winres_xp.o
 	else
@@ -113,14 +121,14 @@ endif
 # Bare-bones mode (for the adventurous lunatic) - includes all LOW_MEMORY options
 ifdef BARE_BONES
 LOW_MEMORY=1
-COMPILER_OPTIONS += -DSMA_PASSTHROUGH -DNO_DELETE -DNO_TRAVCHECK -DBARE_BONES
+COMPILER_OPTIONS += -DNO_DELETE -DNO_TRAVCHECK -DBARE_BONES -DNO_ERRORONDUPE
 COMPILER_OPTIONS += -DCHUNK_SIZE=4096 -DPATHBUF_SIZE=1024
 endif
 
 # Low memory mode
 ifdef LOW_MEMORY
 USE_JODY_HASH = 1
-COMPILER_OPTIONS += -DLOW_MEMORY -DSMA_PAGE_SIZE=32768
+COMPILER_OPTIONS += -DLOW_MEMORY
 COMPILER_OPTIONS += -DNO_HARDLINKS -DNO_SYMLINKS -DNO_USER_ORDER -DNO_PERMS
 COMPILER_OPTIONS += -DNO_ATIME -DNO_JSON -DNO_EXTFILTER -DNO_CHUNKSIZE
 COMPILER_OPTIONS += -DNO_JODY_SORT
@@ -132,15 +140,11 @@ endif
 # Use jody_hash instead of xxHash if requested
 ifdef USE_JODY_HASH
 COMPILER_OPTIONS += -DUSE_JODY_HASH
-ifndef EXTERNAL_HASH_LIB
-OBJS += jody_hash.o
-endif
 OBJS_CLEAN += xxhash.o
 else
 ifndef EXTERNAL_HASH_LIB
 OBJS += xxhash.o
 endif
-OBJS_CLEAN += jody_hash.o
 endif  # USE_JODY_HASH
 
 # Stack size limit can be too small for deep directory trees, so set to 16 MiB
@@ -182,31 +186,39 @@ ifdef STATIC_DEDUPE_H
 COMPILER_OPTIONS += -DSTATIC_DEDUPE_H
 endif
 
+### Find nearby libjodycode
+ifdef USE_NEARBY_JC
+ ifneq ("$(wildcard ../libjodycode/libjodycode.h)","")
+ COMPILER_OPTIONS += -I../libjodycode -L../libjodycode
+ endif
+endif
+ifdef FORCE_JC_DLL
+LINK_OPTIONS += -l:../libjodycode/libjodycode.dll
+else
+LINK_OPTIONS += -ljodycode
+endif
+
+
 CFLAGS += $(COMPILER_OPTIONS) $(CFLAGS_EXTRA)
+LDFLAGS += $(LINK_OPTIONS) $(LDFLAGS_EXTRA)
 
-INSTALL_PROGRAM = $(INSTALL) -m 0755
-INSTALL_DATA    = $(INSTALL) -m 0644
-
-# ADDITIONAL_OBJECTS - some platforms will need additional object files
-# to support features not supplied by their vendor. Eg: GNU getopt()
-#ADDITIONAL_OBJECTS += getopt.o
-
-OBJS += jdupes.o jody_paths.o jody_sort.o jody_win_unicode.o jody_strtoepoch.o string_malloc.o oom.o
-OBJS += jody_cacheinfo.o
-OBJS += act_deletefiles.o act_linkfiles.o act_printmatches.o act_summarize.o act_printjson.o
-OBJS += $(ADDITIONAL_OBJECTS)
 
 all: $(PROGRAM_NAME)
 
-static: $(PROGRAM_NAME)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM_NAME) $(OBJS) -static
+dynamic_jc: $(PROGRAM_NAME)
+	$(CC) $(CFLAGS) $(OBJS) -Wl,-Bdynamic $(LDFLAGS) -o $(PROGRAM_NAME)$(SUFFIX)
 
-static_stripped: $(PROGRAM_NAME)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM_NAME) $(OBJS) -static
-	strip $(PROGRAM_NAME)
+static_jc: $(PROGRAM_NAME)
+	$(CC) $(CFLAGS) $(OBJS) -Wl,-Bstatic $(LDFLAGS) -Wl,-Bdynamic -o $(PROGRAM_NAME)$(SUFFIX)
+
+static: $(PROGRAM_NAME)
+	$(CC) $(CFLAGS) $(OBJS) -static $(LDFLAGS) -o $(PROGRAM_NAME)$(SUFFIX)
+
+static_stripped: $(PROGRAM_NAME) static
+	strip $(PROGRAM_NAME)$(SUFFIX)
 
 $(PROGRAM_NAME): $(OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(PROGRAM_NAME) $(OBJS)
+	$(CC) $(CFLAGS) $(OBJS) $(LDFLAGS) -o $(PROGRAM_NAME)$(SUFFIX)
 
 winres.o: winres.rc winres.manifest.xml
 	./tune_winres.sh
@@ -221,7 +233,7 @@ installdirs:
 	test -e $(DESTDIR)$(MAN_DIR) || $(MKDIR) $(DESTDIR)$(MAN_DIR)
 
 install: $(PROGRAM_NAME) installdirs
-	$(INSTALL_PROGRAM)	$(PROGRAM_NAME)   $(DESTDIR)$(BIN_DIR)/$(PROGRAM_NAME)
+	$(INSTALL_PROGRAM)	$(PROGRAM_NAME)$(SUFFIX)   $(DESTDIR)$(BIN_DIR)/$(PROGRAM_NAME)$(SUFFIX)
 	$(INSTALL_DATA)		$(PROGRAM_NAME).1 $(DESTDIR)$(MAN_DIR)/$(PROGRAM_NAME).$(MAN_EXT)
 
 uninstalldirs:
@@ -229,23 +241,23 @@ uninstalldirs:
 	-test -e $(DESTDIR)$(MAN_DIR) && $(RMDIR) $(DESTDIR)$(MAN_DIR)
 
 uninstall: uninstalldirs
-	$(RM)	$(DESTDIR)$(BIN_DIR)/$(PROGRAM_NAME)
+	$(RM)	$(DESTDIR)$(BIN_DIR)/$(PROGRAM_NAME)$(SUFFIX)
 	$(RM)	$(DESTDIR)$(MAN_DIR)/$(PROGRAM_NAME).$(MAN_EXT)
 
 test:
 	./test.sh
 
 stripped: $(PROGRAM_NAME)
-	strip $(PROGRAM_NAME)$(PROGRAM_SUFFIX)
+	strip $(PROGRAM_NAME)$(SUFFIX)
 
 clean:
-	$(RM) $(OBJS) $(OBJS_CLEAN) build_date.h $(PROGRAM_NAME) $(PROGRAM_NAME).exe *~ .*.un~ *.gcno *.gcda *.gcov
+	$(RM) $(OBJS) $(OBJS_CLEAN) build_date.h $(PROGRAM_NAME)$(SUFFIX) *~ .*.un~ *.gcno *.gcda *.gcov
 
 distclean: clean
-	$(RM) *.pkg.tar.*
-	$(RM) -r jdupes-*-*/ jdupes-*-*.zip
+	$(RM) -rf *.pkg.tar* jdupes-*-*/ jdupes-*-*.zip
 
 chrootpackage:
 	+./chroot_build.sh
+
 package:
-	+./generate_packages.sh
+	+./generate_packages.sh $(ARCH)

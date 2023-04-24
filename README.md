@@ -152,6 +152,7 @@ option is specified (delete, summarize, link, dedupe, etc.)
                         particular directory more than once; refer to the
                         documentation for additional information
  -D --debug             output debug statistics after completion
+ -E --error-on-dupe     exit on any duplicate found with status code 255
  -f --omit-first        omit the first file in each set of matches
  -h --help              display this help message
  -H --hard-links        treat any linked files as duplicate files. Normally
@@ -529,8 +530,6 @@ For all other jdupes inquiries, contact Jody Bruchon <jody@jodybruchon.com>
 Legal information and software license
 -------------------------------------------------------------------------------
 jdupes is Copyright (C) 2015-2023 by Jody Bruchon <jody@jodybruchon.com>
-
-Includes other code libraries which are (C) 2014-2023 by Jody Bruchon
 
 Derived from the original 'fdupes' 1.51 (C) 1999-2014 by Adrian Lopez
 
