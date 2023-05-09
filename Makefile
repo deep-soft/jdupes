@@ -41,7 +41,7 @@ INSTALL_PROGRAM = $(INSTALL) -m 0755
 INSTALL_DATA    = $(INSTALL) -m 0644
 
 # Main object files
-OBJS += jdupes.o args.o helptext.o extfilter.o travcheck.o
+OBJS += jdupes.o args.o helptext.o extfilter.o travcheck.o libjodycode_check.o
 OBJS += act_deletefiles.o act_linkfiles.o act_printmatches.o act_summarize.o act_printjson.o
 
 # Configuration section
@@ -203,7 +203,7 @@ CFLAGS += $(COMPILER_OPTIONS) $(CFLAGS_EXTRA)
 LDFLAGS += $(LINK_OPTIONS) $(LDFLAGS_EXTRA)
 
 
-all: $(PROGRAM_NAME)
+all: libjodycode_hint $(PROGRAM_NAME)
 
 dynamic_jc: $(PROGRAM_NAME)
 	$(CC) $(CFLAGS) $(OBJS) -Wl,-Bdynamic $(LDFLAGS) -o $(PROGRAM_NAME)$(SUFFIX)
@@ -261,3 +261,6 @@ chrootpackage:
 
 package:
 	+./generate_packages.sh $(ARCH)
+
+libjodycode_hint:
+	@echo "hint: if ../libjodycode is built and Make fails, try doing 'make USE_NEARBY_JC=1 static_jc'"$$'\n'

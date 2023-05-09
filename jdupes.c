@@ -42,6 +42,7 @@
 #include <sys/time.h>
 
 #include <libjodycode.h>
+#include "libjodycode_check.h"
 #include "jdupes.h"
 #include "version.h"
 #include "helptext.h"
@@ -145,7 +146,6 @@ static uintmax_t progress = 0, item_progress = 0, dupecount = 0;
 static unsigned int small_file = 0, partial_hash = 0, partial_elim = 0;
 static unsigned int full_hash = 0, partial_to_full = 0, hash_fail = 0;
 static uintmax_t comparisons = 0;
-static unsigned int filetree_lefts = 0, filetree_rights = 0;
  #ifdef ON_WINDOWS
   #ifndef NO_HARDLINKS
   static unsigned int hll_exclude = 0;
@@ -1333,6 +1333,12 @@ int main(int argc, char **argv)
 
 #define GETOPT_STRING "@019ABC:DdEfHhIijKLlMmNnOo:P:pQqRrSsTtUuVvX:Zz"
 
+  /* Verify libjodycode compatibility before going further */
+  if (libjodycode_version_check(1, 0) != 0) {
+    version_text(1);
+    exit(EXIT_FAILURE);
+  }
+
 /* Windows buffers our stderr output; don't let it do that */
 #ifdef ON_WINDOWS
   if (setvbuf(stderr, NULL, _IONBF, 0) != 0)
@@ -1570,7 +1576,7 @@ int main(int argc, char **argv)
       break;
     case 'v':
     case 'V':
-      version_text();
+      version_text(0);
       exit(EXIT_SUCCESS);
     case 'o':
 #ifndef NO_MTIME  /* Remove if new order types are added! */
