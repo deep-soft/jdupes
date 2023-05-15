@@ -43,17 +43,20 @@
 
 #include <libjodycode.h>
 #include "libjodycode_check.h"
+
+#include "likely_unlikely.h"
 #include "jdupes.h"
-#include "version.h"
-#include "helptext.h"
 #include "args.h"
 #ifndef NO_EXTFILTER
  #include "extfilter.h"
 #endif
+#include "filestat.h"
+#include "helptext.h"
+#include "progress.h"
 #ifndef NO_TRAVCHECK
  #include "travcheck.h"
 #endif
-#include "likely_unlikely.h"
+#include "version.h"
 
 #ifndef USE_JODY_HASH
  #include "xxhash.h"
@@ -108,7 +111,7 @@ static const char *program_name;
  struct jc_winstat s;
 #else
  struct stat s;
- static int usr1_toggle = 0;
+ int usr1_toggle = 0;
 #endif
 
 #ifndef PARTIAL_HASH_SIZE
@@ -137,19 +140,18 @@ static const char *program_name;
 #endif
 
 /* Required for progress indicator code */
-static uintmax_t filecount = 0;
-static uintmax_t progress = 0, item_progress = 0, dupecount = 0;
+uintmax_t filecount = 0, progress = 0, item_progress = 0, dupecount = 0;
 /* Number of read loops before checking progress indicator */
 #define CHECK_MINIMUM 256
 
 /* Performance and behavioral statistics (debug mode) */
 #ifdef DEBUG
-static unsigned int small_file = 0, partial_hash = 0, partial_elim = 0;
-static unsigned int full_hash = 0, partial_to_full = 0, hash_fail = 0;
-static uintmax_t comparisons = 0;
+unsigned int small_file = 0, partial_hash = 0, partial_elim = 0;
+unsigned int full_hash = 0, partial_to_full = 0, hash_fail = 0;
+uintmax_t comparisons = 0;
  #ifdef ON_WINDOWS
   #ifndef NO_HARDLINKS
-  static unsigned int hll_exclude = 0;
+  unsigned int hll_exclude = 0;
   #endif
  #endif
 #endif /* DEBUG */
@@ -158,7 +160,7 @@ static uintmax_t comparisons = 0;
 static filetree_t *checktree = NULL;
 
 /* Directory/file parameter position counter */
-static unsigned int user_item_count = 1;
+unsigned int user_item_count = 1;
 
 /* registerfile() direction options */
 enum tree_direction { NONE, LEFT, RIGHT };
@@ -174,9 +176,6 @@ struct timeval time1, time2;
 
 /* For path name mangling */
 char tempname[PATHBUF_SIZE * 2];
-
-/* Compare two hashes like memcmp() */
-#define HASH_COMPARE(a,b) ((a > b) ? 1:((a == b) ? 0:-1))
 
 /***** End definitions, begin code *****/
 
@@ -206,129 +205,22 @@ void sigusr1(const int signum)
   }
   return;
 }
-#endif
 
-
-/* Update progress indicator if requested */
-static void update_progress(const char * const restrict msg, const int file_percent)
+void check_sigusr1(void)
 {
-  static int did_fpct = 0;
-
-  /* The caller should be doing this anyway...but don't trust that they did */
-  if (ISFLAG(flags, F_HIDEPROGRESS)) return;
-
-  gettimeofday(&time2, NULL);
-
-  if (progress == 0 || time2.tv_sec > time1.tv_sec) {
-    fprintf(stderr, "\rProgress [%" PRIuMAX "/%" PRIuMAX ", %" PRIuMAX " pairs matched] %" PRIuMAX "%%",
-      progress, filecount, dupecount, (progress * 100) / filecount);
-    if (file_percent > -1 && msg != NULL) {
-      fprintf(stderr, "  (%s: %d%%)         ", msg, file_percent);
-      did_fpct = 1;
-    } else if (did_fpct != 0) {
-      fprintf(stderr, "                     ");
-      did_fpct = 0;
-    }
-    fflush(stderr);
-  }
-  time1.tv_sec = time2.tv_sec;
-#ifndef ON_WINDOWS
   /* Notify of change to soft abort status if SIGUSR1 received */
-  if (usr1_toggle != 0) {
+  if (unlikely(usr1_toggle != 0)) {
     fprintf(stderr, "\njdupes received a USR1 signal; soft abort (-Z) is now %s\n", usr1_toggle == 1 ? "ON" : "OFF" );
     usr1_toggle = 0;
   }
-#endif
   return;
 }
+#else
+#define check_sigusr1()
+#endif
 
 
 /***** Add new functions here *****/
-
-
-/* Check file's stat() info to make sure nothing has changed
- * Returns 1 if changed, 0 if not changed, negative if error */
-extern int file_has_changed(file_t * const restrict file)
-{
-  /* If -t/--no-change-check specified then completely bypass this code */
-  if (ISFLAG(flags, F_NOCHANGECHECK)) return 0;
-
-  if (unlikely(file == NULL || file->d_name == NULL)) jc_nullptr("file_has_changed()");
-  LOUD(fprintf(stderr, "file_has_changed('%s')\n", file->d_name);)
-
-  if (!ISFLAG(file->flags, FF_VALID_STAT)) return -66;
-
-  if (STAT(file->d_name, &s) != 0) return -2;
-  if (file->inode != s.st_ino) return 1;
-  if (file->size != s.st_size) return 1;
-  if (file->device != s.st_dev) return 1;
-  if (file->mode != s.st_mode) return 1;
-#ifndef NO_MTIME
-  if (file->mtime != s.st_mtime) return 1;
-#endif
-#ifndef NO_PERMS
-  if (file->uid != s.st_uid) return 1;
-  if (file->gid != s.st_gid) return 1;
-#endif
-#ifndef NO_SYMLINKS
-  if (lstat(file->d_name, &s) != 0) return -3;
-  if ((S_ISLNK(s.st_mode) > 0) ^ ISFLAG(file->flags, FF_IS_SYMLINK)) return 1;
-#endif
-
-  return 0;
-}
-
-
-int getfilestats(file_t * const restrict file)
-{
-  if (unlikely(file == NULL || file->d_name == NULL)) jc_nullptr("getfilestats()");
-  LOUD(fprintf(stderr, "getfilestats('%s')\n", file->d_name);)
-
-  /* Don't stat the same file more than once */
-  if (ISFLAG(file->flags, FF_VALID_STAT)) return 0;
-  SETFLAG(file->flags, FF_VALID_STAT);
-
-  if (STAT(file->d_name, &s) != 0) return -1;
-  file->size = s.st_size;
-  file->inode = s.st_ino;
-  file->device = s.st_dev;
-#ifndef NO_MTIME
-  file->mtime = s.st_mtime;
-#endif
-#ifndef NO_ATIME
-  file->atime = s.st_atime;
-#endif
-  file->mode = s.st_mode;
-#ifndef NO_HARDLINKS
-  file->nlink = s.st_nlink;
-#endif
-#ifndef NO_PERMS
-  file->uid = s.st_uid;
-  file->gid = s.st_gid;
-#endif
-#ifndef NO_SYMLINKS
-  if (lstat(file->d_name, &s) != 0) return -1;
-  if (S_ISLNK(s.st_mode) > 0) SETFLAG(file->flags, FF_IS_SYMLINK);
-#endif
-  return 0;
-}
-
-
-/* Returns -1 if stat() fails, 0 if it's a directory, 1 if it's not */
-extern int getdirstats(const char * const restrict name,
-        jdupes_ino_t * const restrict inode, dev_t * const restrict dev,
-        jdupes_mode_t * const restrict mode)
-{
-  if (unlikely(name == NULL || inode == NULL || dev == NULL)) jc_nullptr("getdirstats");
-  LOUD(fprintf(stderr, "getdirstats('%s', %p, %p)\n", name, (void *)inode, (void *)dev);)
-
-  if (STAT(name, &s) != 0) return -1;
-  *inode = s.st_ino;
-  *dev = s.st_dev;
-  *mode = s.st_mode;
-  if (!S_ISDIR(s.st_mode)) return 1;
-  return 0;
-}
 
 
 /* Check a pair of files for match exclusion conditions
@@ -340,7 +232,7 @@ extern int getdirstats(const char * const restrict name,
  * -3 on exclusion due to isolation
  * -4 on exclusion due to same filesystem
  * -5 on exclusion due to permissions */
-extern int check_conditions(const file_t * const restrict file1, const file_t * const restrict file2)
+int check_conditions(const file_t * const restrict file1, const file_t * const restrict file2)
 {
   if (unlikely(file1 == NULL || file2 == NULL || file1->d_name == NULL || file2->d_name == NULL)) jc_nullptr("check_conditions()");
 
@@ -526,7 +418,7 @@ static void grokdir(const char * const restrict dir,
 {
   file_t * restrict newfile;
   struct dirent *dirinfo;
-  static int grokdir_level = 0;
+  static uintmax_t grokdir_level = 0;
   size_t dirlen;
   int i, single = 0;
   jdupes_ino_t inode;
@@ -615,14 +507,8 @@ static void grokdir(const char * const restrict dir,
 
     LOUD(fprintf(stderr, "grokdir: readdir: '%s'\n", dirinfo->d_name));
     if (unlikely(!jc_streq(dirinfo->d_name, ".") || !jc_streq(dirinfo->d_name, ".."))) continue;
-    if (!ISFLAG(flags, F_HIDEPROGRESS)) {
-      gettimeofday(&time2, NULL);
-      if (unlikely(progress == 0 || time2.tv_sec > time1.tv_sec)) {
-        fprintf(stderr, "\rScanning: %" PRIuMAX " files, %" PRIuMAX " dirs (in %u specified)",
-            progress, item_progress, user_item_count);
-      }
-      time1.tv_sec = time2.tv_sec;
-    }
+    check_sigusr1();
+    update_phase1_progress(progress, "dirs");
 
     /* Assemble the file's full path name, optimized to avoid strcat() */
     dirlen = strlen(dir);
@@ -721,10 +607,7 @@ static void grokdir(const char * const restrict dir,
 
 skip_single:
   grokdir_level--;
-  if (grokdir_level == 0 && !ISFLAG(flags, F_HIDEPROGRESS)) {
-    fprintf(stderr, "\rScanning: %" PRIuMAX " files, %" PRIuMAX " items (in %u specified)",
-            progress, item_progress, user_item_count);
-  }
+  update_phase1_progress(grokdir_level, "items");
   return;
 
 error_stat_dir:
@@ -839,12 +722,11 @@ static jdupes_hash_t *get_filehash(const file_t * const restrict checkfile,
     if ((off_t)bytes_to_read > fsize) break;
     else fsize -= (off_t)bytes_to_read;
 
-    if (!ISFLAG(flags, F_HIDEPROGRESS)) {
-      check++;
-      if (check > CHECK_MINIMUM) {
-        update_progress("hashing", (int)(((checkfile->size - fsize) * 100) / checkfile->size));
-        check = 0;
-      }
+    check_sigusr1();
+    check++;
+    if (check > CHECK_MINIMUM) {
+      update_phase2_progress("hashing", (int)(((checkfile->size - fsize) * 100) / checkfile->size));
+      check = 0;
     }
   }
 
@@ -1090,13 +972,11 @@ static inline int confirmmatch(FILE * const restrict file1, FILE * const restric
     if (r1 != r2) return 0; /* file lengths are different */
     if (memcmp (c1, c2, r1)) return 0; /* file contents are different */
 
-    if (!ISFLAG(flags, F_HIDEPROGRESS)) {
-      check++;
-      bytes += (off_t)r1;
-      if (check > CHECK_MINIMUM) {
-        update_progress("confirm", (int)((bytes * 100) / size));
-        check = 0;
-      }
+    check++;
+    bytes += (off_t)r1;
+    if (check > CHECK_MINIMUM) {
+      update_phase2_progress("confirm", (int)((bytes * 100) / size));
+      check = 0;
     }
   } while (r2);
 
@@ -1812,7 +1692,8 @@ int main(int argc, char **argv)
 skip_full_check:
     curfile = curfile->next;
 
-    if (!ISFLAG(flags, F_HIDEPROGRESS)) update_progress(NULL, -1);
+    check_sigusr1();
+    update_phase2_progress(NULL, -1);
     progress++;
   }
 

@@ -57,6 +57,7 @@ extern "C" {
  typedef mode_t jdupes_mode_t;
  extern const char *FILE_MODE_RO;
  extern const char dir_sep;
+ extern int usr1_toggle;
  #ifdef UNICODE
   #error Do not define UNICODE on non-Windows platforms.
   #undef UNICODE
@@ -119,6 +120,10 @@ extern "C" {
 #else
  #define DBG(a)
 #endif
+
+
+/* Compare two hashes like memcmp() */
+#define HASH_COMPARE(a,b) ((a > b) ? 1:((a == b) ? 0:-1))
 
 
 /* Behavior modification flags */
@@ -243,16 +248,16 @@ typedef struct _filetree {
  #define STAT stat
 #endif
 
+/* Progress indicator variables */
+extern uintmax_t filecount, progress, item_progress, dupecount;
+extern struct timeval time1, time2;
+extern unsigned int user_item_count;
 
 extern char tempname[PATHBUF_SIZE * 2];
 
 extern const char *feature_flags[];
 
 extern int file_has_changed(file_t * const restrict file);
-extern int getdirstats(const char * const restrict name,
-        jdupes_ino_t * const restrict inode, dev_t * const restrict dev,
-	jdupes_mode_t * const restrict mode);
-extern int check_conditions(const file_t * const restrict file1, const file_t * const restrict file2);
 extern unsigned int get_max_dupes(const file_t *files, unsigned int * const restrict max,
 		                unsigned int * const restrict n_files);
 
