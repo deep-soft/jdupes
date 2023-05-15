@@ -1,3 +1,4 @@
+# 2023-05-15 20:30
 name: Build release mingw
 
 on:
@@ -5,10 +6,11 @@ on:
 #    branches: [ master ]
 #  pull_request:
 #    branches: [ master ]
-  workflow_dispatch:    
+  workflow_dispatch:
 
 env:
-  TAG_NAME: "build-release-mingw"
+  TAG_NAME: "jdupes"
+
 jobs:
   build-mingw:
     runs-on: windows-2022
@@ -16,17 +18,16 @@ jobs:
       fail-fast: false
       matrix:
         build: [
-#                 mingw_gcc_x64_debug,
                  mingw_gcc_x64_release,
-#                 mingw_clang_x64_debug,
                  mingw_clang_x64_release
+#                 mingw_gcc_x64_debug,
+#                 mingw_clang_x64_debug
                ]
-
         include:
-#          - { build: mingw_gcc_x64_debug,     compiler: mingw_gcc,   arch: amd64, build_config: Debug }
           - { build: mingw_gcc_x64_release,   compiler: mingw_gcc,   arch: amd64, build_config: Release }
-#          - { build: mingw_clang_x64_Debug,   compiler: mingw_clang, arch: amd64, build_config: Debug }
           - { build: mingw_clang_x64_Release, compiler: mingw_clang, arch: amd64, build_config: Release }
+#          - { build: mingw_gcc_x64_debug,     compiler: mingw_gcc,   arch: amd64, build_config: Debug }
+#          - { build: mingw_clang_x64_Debug,   compiler: mingw_clang, arch: amd64, build_config: Debug }
 
     steps:
       - name: Checkout source
@@ -50,6 +51,20 @@ jobs:
         with:
           msystem: MINGW64
           install: make gcc mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
+
+      - name: Clone libjodycode
+        continue-on-error: false
+        shell: msys2 {0}
+        run: |
+          echo "Current dir:" $pwd
+          ls -l
+          pushd ../
+          echo "Current dir:" $pwd
+          ls -l
+          git clone https://github.com/jbruchon/libjodycode
+          popd
+          echo "Current dir:" $pwd
+          ls -l
 
       - name: Build jdupes (gcc)
         continue-on-error: true
@@ -80,7 +95,7 @@ jobs:
         if: matrix.build == 'mingw_gcc_x64_debug'
         uses: github/codeql-action/analyze@v2
 
-      - name: List files
+      - name: List files and create zip archive
         continue-on-error: true
         run: |
           dir ./
@@ -99,6 +114,27 @@ jobs:
         uses: deep-soft/action-gh-release@v1
         with:
           tag_name: ${{ env.TAG_NAME }}
-          draft: true          
           files: |
             jdupes-${{ matrix.compiler }}.zip
+
+      - name: Generate packages
+        continue-on-error: true
+        shell: msys2 {0}
+        run: |
+          bash ./generate_packages.sh
+          dir ./
+
+      - name: Get version
+        continue-on-error: true
+        shell: msys2 {0}
+        run: |
+          VER="$(cat version.h | grep '#define VER "' | cut -d\" -f2)"
+          echo "VER=$VER">>$GITHUB_ENV
+
+      - name: Publish packages
+        continue-on-error: true
+        uses: deep-soft/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG_NAME }}-${{ env.VER }}
+          files: |
+            jdupes*.zip
