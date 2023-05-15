@@ -1,4 +1,4 @@
-# 2023-05-15 22:10
+# 2023-05-15 22:30
 name: Build release mingw
 
 on:
@@ -157,6 +157,14 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
+          VER="$(cat version.h | grep '#define VER "' | cut -d\" -f2)"
+          echo "VER=$VER">>$GITHUB_ENV
+
+      - name: Rename zip file
+        continue-on-error: true
+        shell: bash
+        run: |
+          mv jdupes-${{ env.VER }}-win64.zip jdupes-${{ env.VER }}-win64-${{ matrix.build }}.zip
           VER="$(cat version.h | grep '#define VER "' | cut -d\" -f2)"
           echo "VER=$VER">>$GITHUB_ENV
 
