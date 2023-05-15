@@ -1,4 +1,4 @@
-# 2023-05-15 22:00
+# 2023-05-15 22:10
 name: Build release mingw
 
 on:
@@ -52,7 +52,7 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          install: make gcc git sed mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
+          install: make gcc git sed zip mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
 
       - name: Clone libjodycode
         if: matrix.compiler  == 'mingw_gcc'
@@ -88,7 +88,7 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          install: make git sed mingw-w64-x86_64-clang mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
+          install: make git sed zip mingw-w64-x86_64-clang mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
 
       - name: Clone libjodycode
         if: matrix.compiler  == 'mingw_clang'
