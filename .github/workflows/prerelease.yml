@@ -1,4 +1,4 @@
-# 2023-05-15 21:30
+# 2023-05-15 21:40
 name: Build release mingw
 
 on:
@@ -59,18 +59,15 @@ jobs:
         continue-on-error: false
         shell: bash
         run: |
-          echo "Current dir:"
-          $PWD
+          echo "Current dir:" $PWD
           ls -l
           pushd .
           cd ../
-          echo "Current dir:"
-          $PWD
+          echo "Current dir:" $PWD
           ls -l
           git clone ${{ env.lib_jodycode }}
           popd
-          echo "Current dir:"
-          $PWD
+          echo "Current dir:" $PWD
           ls -l
 
       - name: Build jdupes (gcc)
@@ -94,18 +91,15 @@ jobs:
         continue-on-error: false
         shell: bash
         run: |
-          echo "Current dir:"
-          $PWD
+          echo "Current dir:" $PWD
           ls -l
           pushd .
           cd ../
-          echo "Current dir:"
-          $PWD
+          echo "Current dir:" $PWD
           ls -l
           git clone ${{ env.lib_jodycode }}
           popd
-          echo "Current dir:"
-          $PWD
+          echo "Current dir:" $PWD
           ls -l
 
       - name: Build jdupes (clang)
