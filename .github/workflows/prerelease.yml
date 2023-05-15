@@ -1,4 +1,4 @@
-# 2023-05-15 20:30
+# 2023-05-15 20:50
 name: Build release mingw
 
 on:
@@ -18,16 +18,17 @@ jobs:
       fail-fast: false
       matrix:
         build: [
-                 mingw_gcc_x64_release,
-                 mingw_clang_x64_release
 #                 mingw_gcc_x64_debug,
-#                 mingw_clang_x64_debug
+                 mingw_gcc_x64_release,
+#                 mingw_clang_x64_debug,
+                 mingw_clang_x64_release
                ]
+
         include:
-          - { build: mingw_gcc_x64_release,   compiler: mingw_gcc,   arch: amd64, build_config: Release }
-          - { build: mingw_clang_x64_Release, compiler: mingw_clang, arch: amd64, build_config: Release }
 #          - { build: mingw_gcc_x64_debug,     compiler: mingw_gcc,   arch: amd64, build_config: Debug }
+          - { build: mingw_gcc_x64_release,   compiler: mingw_gcc,   arch: amd64, build_config: Release }
 #          - { build: mingw_clang_x64_Debug,   compiler: mingw_clang, arch: amd64, build_config: Debug }
+          - { build: mingw_clang_x64_Release, compiler: mingw_clang, arch: amd64, build_config: Release }
 
     steps:
       - name: Checkout source
@@ -50,9 +51,10 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          install: make gcc mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
+          install: make gcc git mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
 
       - name: Clone libjodycode
+        if: matrix.compiler  == 'mingw_gcc'
         continue-on-error: false
         shell: msys2 {0}
         run: |
@@ -80,7 +82,22 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          install: make mingw-w64-x86_64-clang mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
+          install: make git mingw-w64-x86_64-clang mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
+
+      - name: Clone libjodycode
+        if: matrix.compiler  == 'mingw_clang'
+        continue-on-error: false
+        shell: msys2 {0}
+        run: |
+          echo "Current dir:" $pwd
+          ls -l
+          pushd ../
+          echo "Current dir:" $pwd
+          ls -l
+          git clone https://github.com/jbruchon/libjodycode
+          popd
+          echo "Current dir:" $pwd
+          ls -l
 
       - name: Build jdupes (clang)
         continue-on-error: true      
