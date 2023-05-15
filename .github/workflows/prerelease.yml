@@ -145,16 +145,15 @@ jobs:
 
       - name: Generate packages
         continue-on-error: true
-        shell: msys2 {0}
+        shell: bash
         run: |
-#          sed SUFFIX=.exe
           sed --in-place 's/SUFFIX=.exe/# SUFFIX=.exe/g' Makefile
           bash ./generate_packages.sh
-          dir ./
+          ls -l ./
 
       - name: Get version
         continue-on-error: true
-        shell: msys2 {0}
+        shell: bash
         run: |
           VER="$(cat version.h | grep '#define VER "' | cut -d\" -f2)"
           echo "VER=$VER">>$GITHUB_ENV
