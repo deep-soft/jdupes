@@ -1,4 +1,4 @@
-# 2023-05-15 20:50
+# 2023-05-15 21:20
 name: Build release mingw
 
 on:
@@ -10,6 +10,7 @@ on:
 
 env:
   TAG_NAME: "jdupes"
+  lib_jodycode: "https://github.com/deep-soft/libjodycode"
 
 jobs:
   build-mingw:
@@ -56,16 +57,20 @@ jobs:
       - name: Clone libjodycode
         if: matrix.compiler  == 'mingw_gcc'
         continue-on-error: false
-        shell: msys2 {0}
+        shell: bash
         run: |
-          echo "Current dir:" $pwd
+          echo "Current dir:"
+          $PWD
           ls -l
-          pushd ../
-          echo "Current dir:" $pwd
+          pushd .
+          cd ../
+          echo "Current dir:"
+          $PWD
           ls -l
-          git clone https://github.com/jbruchon/libjodycode
+          git clone ${{ env.lib_jodycode }}
           popd
-          echo "Current dir:" $pwd
+          echo "Current dir:"
+          $PWD
           ls -l
 
       - name: Build jdupes (gcc)
@@ -75,7 +80,7 @@ jobs:
         shell: msys2 {0}
         run: |
           gcc --version
-          make -j4 -f Makefile static_stripped
+          make -j4 USE_NEARBY_JC=1 -f Makefile static_stripped
 
       - name: Install Clang x64
         if: matrix.compiler  == 'mingw_clang'
@@ -87,16 +92,20 @@ jobs:
       - name: Clone libjodycode
         if: matrix.compiler  == 'mingw_clang'
         continue-on-error: false
-        shell: msys2 {0}
+        shell: bash
         run: |
-          echo "Current dir:" $pwd
+          echo "Current dir:"
+          $PWD
           ls -l
-          pushd ../
-          echo "Current dir:" $pwd
+          pushd .
+          cd ../
+          echo "Current dir:"
+          $PWD
           ls -l
-          git clone https://github.com/jbruchon/libjodycode
+          git clone ${{ env.lib_jodycode }}
           popd
-          echo "Current dir:" $pwd
+          echo "Current dir:"
+          $PWD
           ls -l
 
       - name: Build jdupes (clang)
@@ -106,7 +115,7 @@ jobs:
         shell: msys2 {0}
         run: |
           clang --version
-          make -j4 CLANG=1 -f Makefile static_stripped
+          make -j4 CLANG=1 USE_NEARBY_JC=1 -f Makefile static_stripped
 
       - name: Perform CodeQL Analysis
         if: matrix.build == 'mingw_gcc_x64_debug'
@@ -138,6 +147,8 @@ jobs:
         continue-on-error: true
         shell: msys2 {0}
         run: |
+#          sed SUFFIX=.exe
+          sed --in-place 's/SUFFIX=.exe/# SUFFIX=.exe/g' Makefile
           bash ./generate_packages.sh
           dir ./
 
