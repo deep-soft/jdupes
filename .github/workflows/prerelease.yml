@@ -1,4 +1,4 @@
-# 2023-05-15 21:50
+# 2023-05-15 22:00
 name: Build release mingw
 
 on:
@@ -52,12 +52,12 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          install: make gcc git mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
+          install: make gcc git sed mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
 
       - name: Clone libjodycode
         if: matrix.compiler  == 'mingw_gcc'
         continue-on-error: false
-        shell: bash
+        shell: msys2 {0}
         run: |
           echo "Current dir:" $PWD
           pushd .
@@ -66,6 +66,9 @@ jobs:
           ls -l
           echo "clone: " ${{ env.lib_jodycode }}
           git clone ${{ env.lib_jodycode }}
+          cd libjodycode
+          make
+          cd ..
           echo "Current dir:" $PWD
           ls -l
           popd
@@ -85,12 +88,12 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          install: make git mingw-w64-x86_64-clang mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
+          install: make git sed mingw-w64-x86_64-clang mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
 
       - name: Clone libjodycode
         if: matrix.compiler  == 'mingw_clang'
         continue-on-error: false
-        shell: bash
+        shell: msys2 {0}
         run: |
           echo "Current dir:" $PWD
           pushd .
@@ -99,6 +102,9 @@ jobs:
           ls -l
           echo "clone: " ${{ env.lib_jodycode }}
           git clone ${{ env.lib_jodycode }}
+          cd libjodycode
+          make
+          cd ..
           echo "Current dir:" $PWD
           ls -l
           popd
@@ -141,11 +147,11 @@ jobs:
 
       - name: Generate packages
         continue-on-error: true
-        shell: bash
+        shell: msys2 {0}
         run: |
           sed --in-place 's/SUFFIX=.exe/# SUFFIX=.exe/g' Makefile
           bash ./generate_packages.sh
-          ls -l ./
+          ls -l
 
       - name: Get version
         continue-on-error: true
