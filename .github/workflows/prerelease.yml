@@ -97,6 +97,7 @@ jobs:
       - name: Publish
         continue-on-error: true
         uses: deep-soft/action-gh-release@v1
+        draft: true
         with:
           tag_name: ${{ env.TAG_NAME }}
           files: |
