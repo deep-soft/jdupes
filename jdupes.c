@@ -83,7 +83,7 @@
 #if defined _WIN32 || defined __MINGW32__
  #ifdef UNICODE
   const wchar_t *FILE_MODE_RO = L"rbS";
- static wpath_t wstr;
+  wpath_t wstr;
  #else
   const char *FILE_MODE_RO = "rbS";
  #endif /* UNICODE */
@@ -120,6 +120,7 @@ static const char *program_name;
 
 /* Required for progress indicator code */
 uintmax_t filecount = 0, progress = 0, item_progress = 0, dupecount = 0;
+int progress_alarm = 0;
 
 /* Performance and behavioral statistics (debug mode) */
 #ifdef DEBUG
@@ -360,7 +361,6 @@ static inline int confirmmatch(FILE * const restrict file1, FILE * const restric
   static char *c1 = NULL, *c2 = NULL;
   size_t r1, r2;
   off_t bytes = 0;
-  int check = 0;
 
   if (unlikely(file1 == NULL || file2 == NULL)) jc_nullptr("confirmmatch()");
   LOUD(fprintf(stderr, "confirmmatch running\n"));
@@ -383,11 +383,10 @@ static inline int confirmmatch(FILE * const restrict file1, FILE * const restric
     if (r1 != r2) return 0; /* file lengths are different */
     if (memcmp (c1, c2, r1)) return 0; /* file contents are different */
 
-    check++;
     bytes += (off_t)r1;
-    if (check > CHECK_MINIMUM) {
+    if (progress_alarm != 0) {
+      progress_alarm = 0;
       update_phase2_progress("confirm", (int)((bytes * 100) / size));
-      check = 0;
     }
   } while (r2);
 
@@ -399,7 +398,7 @@ static inline int confirmmatch(FILE * const restrict file1, FILE * const restric
    - Maximum number of files in a duplicate set (length of longest dupe chain)
    - Number of non-zero-length files that have duplicates (if n_files != NULL)
    - Total number of duplicate file sets (groups) */
-extern unsigned int get_max_dupes(const file_t *files, unsigned int * const restrict max,
+unsigned int get_max_dupes(const file_t *files, unsigned int * const restrict max,
                 unsigned int * const restrict n_files) {
   unsigned int groups = 0;
 
@@ -496,14 +495,14 @@ int main(int argc, char **argv)
 #endif
 #ifndef NO_CHUNKSIZE
   static long manual_chunk_size = 0;
-#ifdef __linux__
+ #ifdef __linux__
   static struct jc_proc_cacheinfo pci;
-#endif
+ #endif /* __linux__ */
 #endif /* NO_CHUNKSIZE */
 #ifdef ENABLE_DEDUPE
  #ifdef __linux__
   static struct utsname utsname;
- #endif
+ #endif /* __linux__ */
 #endif
 
 #ifndef NO_GETOPT_LONG
@@ -567,9 +566,9 @@ int main(int argc, char **argv)
     { "zero-match", 0, 0, 'z' },
     { NULL, 0, 0, 0 }
   };
-#define GETOPT getopt_long
+ #define GETOPT getopt_long
 #else
-#define GETOPT getopt
+ #define GETOPT getopt
 #endif
 
 #define GETOPT_STRING "@019ABC:DdEfHhIijKLlMmNnOo:P:pQqRrSsTtUuVvX:Zz"
@@ -844,16 +843,16 @@ int main(int argc, char **argv)
         fprintf(stderr, "Refusing to dedupe on a 2.x kernel; data loss could occur. Aborting.\n");
         exit(EXIT_FAILURE);
       }
-#endif
+#endif /* __linux__ */
       SETFLAG(a_flags, FA_DEDUPEFILES);
       /* btrfs will do the byte-for-byte check itself */
       SETFLAG(flags, F_QUICKCOMPARE);
       /* It is completely useless to dedupe zero-length extents */
       CLEARFLAG(flags, F_INCLUDEEMPTY);
-#else
+#else /* ENABLE_DEDUPE */
       fprintf(stderr, "This program was built without dedupe support\n");
       exit(EXIT_FAILURE);
-#endif
+#endif /* ENABLE_DEDUPE */
       LOUD(fprintf(stderr, "opt: CoW/block-level deduplication enabled (--dedupe)\n");)
       break;
 
@@ -912,8 +911,13 @@ int main(int argc, char **argv)
 
 #ifndef ON_WINDOWS
   /* Catch SIGUSR1 and use it to enable -Z */
-  signal(SIGUSR1, sigusr1);
+  signal(SIGUSR1, catch_sigusr1);
 #endif
+  /* Progress indicator every second */
+  if (!ISFLAG(flags, F_HIDEPROGRESS)) start_progress_alarm();
+
+  /* Force an immediate progress update */
+  progress_alarm = 1;
 
   if (ISFLAG(flags, F_RECURSEAFTER)) {
     firstrecurse = nonoptafter("--recurse:", argc, oldargv, argv);
@@ -974,6 +978,9 @@ int main(int argc, char **argv)
 
   /* Catch CTRL-C */
   signal(SIGINT, sighandler);
+
+  /* Force an immediate progress update */
+  progress_alarm = 1;
 
   while (curfile) {
     static file_t **match = NULL;
@@ -1055,15 +1062,19 @@ skip_full_check:
     curfile = curfile->next;
 
     check_sigusr1();
-    update_phase2_progress(NULL, -1);
+    if (progress_alarm != 0) {
+      progress_alarm = 0;
+      update_phase2_progress(NULL, -1);
+    }
     progress++;
   }
 
   if (!ISFLAG(flags, F_HIDEPROGRESS)) fprintf(stderr, "\r%60s\r", " ");
 
 skip_file_scan:
-  /* Stop catching CTRL+C */
+  /* Stop catching CTRL+C and firing alarms */
   signal(SIGINT, SIG_DFL);
+  if (!ISFLAG(flags, F_HIDEPROGRESS)) stop_progress_alarm();
 #ifndef NO_DELETE
   if (ISFLAG(a_flags, FA_DELETEFILES)) {
     if (ISFLAG(flags, F_NOPROMPT)) deletefiles(files, 0, 0);
