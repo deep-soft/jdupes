@@ -88,7 +88,6 @@ void loaddir(const char * const restrict dir,
   file_t * restrict newfile;
   struct dirent *dirinfo;
   size_t dirlen;
-  static uint_fast32_t loaddir_level = 0;
   int i, single = 0;
   jdupes_ino_t inode;
   dev_t device, n_device;
@@ -105,9 +104,12 @@ void loaddir(const char * const restrict dir,
   if (unlikely(dir == NULL || filelistp == NULL)) jc_nullptr("loaddir()");
   LOUD(fprintf(stderr, "loaddir: scanning '%s' (order %d, recurse %d)\n", dir, user_item_count, recurse));
 
+  if (interrupt) return;
+
   /* Get directory stats (or file stats if it's a file) */
   i = getdirstats(dir, &inode, &device, &mode);
   if (unlikely(i < 0)) goto error_stat_dir;
+
   /* if dir is actually a file, just add it to the file tree */
   if (i == 1) {
 /* Single file addition is disabled for now because there is no safeguard
@@ -142,7 +144,6 @@ void loaddir(const char * const restrict dir,
 #endif /* NO_TRAVCHECK */
 
   item_progress++;
-  loaddir_level++;
 
 #ifdef UNICODE
   /* Windows requires \* at the end of directory names */
@@ -179,7 +180,7 @@ void loaddir(const char * const restrict dir,
     check_sigusr1();
     if (progress_alarm != 0) {
       progress_alarm = 0;
-      if (!ISFLAG(flags, F_HIDEPROGRESS)) update_phase1_progress("dirs");
+      update_phase1_progress("dirs");
     }
 
     /* Assemble the file's full path name, optimized to avoid strcat() */
@@ -278,13 +279,6 @@ void loaddir(const char * const restrict dir,
 #endif
 
 skip_single:
-  loaddir_level--;
-  if (progress_alarm != 0) {
-    progress_alarm = 0;
-    if (!ISFLAG(flags, F_HIDEPROGRESS)) {
-      if (loaddir_level == 0) update_phase1_progress("items");
-    }
-  }
   return;
 
 error_stat_dir:
