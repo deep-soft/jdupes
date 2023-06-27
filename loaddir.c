@@ -87,7 +87,7 @@ void loaddir(const char * const restrict dir,
 {
   file_t * restrict newfile;
   struct dirent *dirinfo;
-  size_t dirlen;
+  size_t dirlen, dirpos;
   int i, single = 0;
   jdupes_ino_t inode;
   dev_t device, n_device;
@@ -148,8 +148,7 @@ void loaddir(const char * const restrict dir,
 #ifdef UNICODE
   /* Windows requires \* at the end of directory names */
   strncpy(tempname, dir, PATHBUF_SIZE * 2 - 1);
-  dirlen = strlen(tempname) - 1;
-  p = tempname + dirlen;
+  p = tempname + strlen(tempname) - 1;
   if (*p == '/' || *p == '\\') *p = '\0';
   strncat(tempname, "\\*", PATHBUF_SIZE * 2 - 1);
 
@@ -158,6 +157,7 @@ void loaddir(const char * const restrict dir,
   LOUD(fprintf(stderr, "FindFirstFile: %s\n", dir));
   hFind = FindFirstFileW(wname, &ffd);
   if (unlikely(hFind == INVALID_HANDLE_VALUE)) { LOUD(fprintf(stderr, "\nfile handle bad\n")); goto error_cd; }
+  dirlen = strlen(dir);
   LOUD(fprintf(stderr, "Loop start\n"));
   do {
     char * restrict tp = tempname;
@@ -169,6 +169,7 @@ void loaddir(const char * const restrict dir,
 #else
   cd = opendir(dir);
   if (unlikely(!cd)) goto error_cd;
+  dirlen = strlen(dir);
 
   while ((dirinfo = readdir(cd)) != NULL) {
     char * restrict tp = tempname;
@@ -184,25 +185,25 @@ void loaddir(const char * const restrict dir,
     }
 
     /* Assemble the file's full path name, optimized to avoid strcat() */
-    dirlen = strlen(dir);
+    dirpos = dirlen;
     d_name_len = strlen(dirinfo->d_name);
-    memcpy(tp, dir, dirlen+1);
-    if (dirlen != 0 && tp[dirlen-1] != dir_sep) {
-      tp[dirlen] = dir_sep;
-      dirlen++;
+    memcpy(tp, dir, dirpos + 1);
+    if (dirpos != 0 && tp[dirpos - 1] != dir_sep) {
+      tp[dirpos] = dir_sep;
+      dirpos++;
     }
-    if (unlikely(dirlen + d_name_len + 1 >= (PATHBUF_SIZE * 2))) goto error_overflow;
-    tp += dirlen;
+    if (unlikely(dirpos + d_name_len + 1 >= (PATHBUF_SIZE * 2))) goto error_overflow;
+    tp += dirpos;
     memcpy(tp, dirinfo->d_name, d_name_len);
     tp += d_name_len;
     *tp = '\0';
     d_name_len++;
 
     /* Allocate the file_t and the d_name entries */
-    newfile = init_newfile(dirlen + d_name_len + 2, filelistp);
+    newfile = init_newfile(dirpos + d_name_len + 2, filelistp);
 
     tp = tempname;
-    memcpy(newfile->d_name, tp, dirlen + d_name_len);
+    memcpy(newfile->d_name, tp, dirpos + d_name_len);
 
     /*** WARNING: tempname global gets reused by check_singlefile here! ***/
 
@@ -236,7 +237,7 @@ void loaddir(const char * const restrict dir,
           LOUD(fprintf(stderr, "loaddir: directory: recursing (-r/-R)\n"));
           loaddir(newfile->d_name, filelistp, recurse);
         }
-#endif
+#endif /* NO_SYMLINKS */
       } else { LOUD(fprintf(stderr, "loaddir: directory: not recursing\n")); }
       free(newfile->d_name);
       free(newfile);
@@ -283,9 +284,11 @@ skip_single:
 
 error_stat_dir:
   fprintf(stderr, "\ncould not stat dir "); jc_fwprint(stderr, dir, 1);
+  exit_status = EXIT_FAILURE;
   return;
 error_cd:
   fprintf(stderr, "\ncould not chdir to "); jc_fwprint(stderr, dir, 1);
+  exit_status = EXIT_FAILURE;
   return;
 error_overflow:
   fprintf(stderr, "\nerror: a path buffer overflowed\n");

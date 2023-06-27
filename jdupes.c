@@ -42,6 +42,9 @@
 #include "jdupes.h"
 #include "args.h"
 #include "checks.h"
+#ifdef DEBUG
+ #include "dumpflags.h"
+#endif
 #ifndef NO_EXTFILTER
  #include "extfilter.h"
 #endif
@@ -49,6 +52,7 @@
 #include "filestat.h"
 #include "helptext.h"
 #include "loaddir.h"
+#include "match.h"
 #include "progress.h"
 #include "interrupt.h"
 #include "sort.h"
@@ -139,9 +143,6 @@ static filetree_t *checktree = NULL;
 /* Directory/file parameter position counter */
 unsigned int user_item_count = 1;
 
-/* registerfile() direction options */
-enum tree_direction { NONE, LEFT, RIGHT };
-
 /* Sort order reversal */
 int sort_direction = 1;
 
@@ -152,388 +153,12 @@ char tempname[PATHBUF_SIZE * 2];
 const char *s_interrupt = "\nStopping file scan due to user abort\n";
 const char *s_no_dupes = "No duplicates found.\n";
 
+/* Exit status; use exit() codes for setting this */
+int exit_status = EXIT_SUCCESS;
+
 /***** End definitions, begin code *****/
 
 /***** Add new functions here *****/
-
-
-#ifdef DEBUG
-static void dump_all_flags(void)
-{
-  fprintf(stderr, "\nSet flag dump:");
-  /* Behavior modification flags */
-extern uint64_t flags, a_flags, p_flags;
-  if (ISFLAG(flags, F_RECURSE)) fprintf(stderr, " F_RECURSE");
-  if (ISFLAG(flags, F_HIDEPROGRESS)) fprintf(stderr, " F_HIDEPROGRESS");
-  if (ISFLAG(flags, F_SOFTABORT)) fprintf(stderr, " F_SOFTABORT");
-  if (ISFLAG(flags, F_FOLLOWLINKS)) fprintf(stderr, " F_FOLLOWLINKS");
-  if (ISFLAG(flags, F_INCLUDEEMPTY)) fprintf(stderr, " F_INCLUDEEMPTY");
-  if (ISFLAG(flags, F_CONSIDERHARDLINKS)) fprintf(stderr, " F_CONSIDERHARDLINKS");
-  if (ISFLAG(flags, F_RECURSEAFTER)) fprintf(stderr, " F_RECURSEAFTER");
-  if (ISFLAG(flags, F_NOPROMPT)) fprintf(stderr, " F_NOPROMPT");
-  if (ISFLAG(flags, F_EXCLUDEHIDDEN)) fprintf(stderr, " F_EXCLUDEHIDDEN");
-  if (ISFLAG(flags, F_PERMISSIONS)) fprintf(stderr, " F_PERMISSIONS");
-  if (ISFLAG(flags, F_EXCLUDESIZE)) fprintf(stderr, " F_EXCLUDESIZE");
-  if (ISFLAG(flags, F_QUICKCOMPARE)) fprintf(stderr, " F_QUICKCOMPARE");
-  if (ISFLAG(flags, F_USEPARAMORDER)) fprintf(stderr, " F_USEPARAMORDER");
-  if (ISFLAG(flags, F_REVERSESORT)) fprintf(stderr, " F_REVERSESORT");
-  if (ISFLAG(flags, F_ISOLATE)) fprintf(stderr, " F_ISOLATE");
-  if (ISFLAG(flags, F_ONEFS)) fprintf(stderr, " F_ONEFS");
-  if (ISFLAG(flags, F_PARTIALONLY)) fprintf(stderr, " F_PARTIALONLY");
-  if (ISFLAG(flags, F_NOCHANGECHECK)) fprintf(stderr, " F_NOCHANGECHECK");
-  if (ISFLAG(flags, F_NOTRAVCHECK)) fprintf(stderr, " F_NOTRAVCHECK");
-  if (ISFLAG(flags, F_SKIPHASH)) fprintf(stderr, " F_SKIPHASH");
-  if (ISFLAG(flags, F_BENCHMARKSTOP)) fprintf(stderr, " F_BENCHMARKSTOP");
-
-  if (ISFLAG(flags, F_LOUD)) fprintf(stderr, " F_LOUD");
-  if (ISFLAG(flags, F_DEBUG)) fprintf(stderr, " F_DEBUG");
-
-  /* Action-related flags */
-  if (ISFLAG(a_flags, FA_PRINTMATCHES)) fprintf(stderr, " FA_PRINTMATCHES");
-  if (ISFLAG(a_flags, FA_PRINTUNIQUE)) fprintf(stderr, " FA_PRINTUNIQUE");
-  if (ISFLAG(a_flags, FA_OMITFIRST)) fprintf(stderr, " FA_OMITFIRST");
-  if (ISFLAG(a_flags, FA_SUMMARIZEMATCHES)) fprintf(stderr, " FA_SUMMARIZEMATCHES");
-  if (ISFLAG(a_flags, FA_DELETEFILES)) fprintf(stderr, " FA_DELETEFILES");
-  if (ISFLAG(a_flags, FA_SHOWSIZE)) fprintf(stderr, " FA_SHOWSIZE");
-  if (ISFLAG(a_flags, FA_HARDLINKFILES)) fprintf(stderr, " FA_HARDLINKFILES");
-  if (ISFLAG(a_flags, FA_DEDUPEFILES)) fprintf(stderr, " FA_DEDUPEFILES");
-  if (ISFLAG(a_flags, FA_MAKESYMLINKS)) fprintf(stderr, " FA_MAKESYMLINKS");
-  if (ISFLAG(a_flags, FA_PRINTNULL)) fprintf(stderr, " FA_PRINTNULL");
-  if (ISFLAG(a_flags, FA_PRINTJSON)) fprintf(stderr, " FA_PRINTJSON");
-  if (ISFLAG(a_flags, FA_ERRORONDUPE)) fprintf(stderr, " FA_ERRORONDUPE");
-
-  /* Extra print flags */
-  if (ISFLAG(p_flags, PF_PARTIAL)) fprintf(stderr, " PF_PARTIAL");
-  if (ISFLAG(p_flags, PF_EARLYMATCH)) fprintf(stderr, " PF_EARLYMATCH");
-  if (ISFLAG(p_flags, PF_FULLHASH)) fprintf(stderr, " PF_FULLHASH");
-  fprintf(stderr, " [end of list]\n\n");
-  fflush(stderr);
-  return;
-}
-#endif
-
-
-static inline void registerfile(filetree_t * restrict * const restrict nodeptr,
-                const enum tree_direction d, file_t * const restrict file)
-{
-  filetree_t * restrict branch;
-
-  if (unlikely(nodeptr == NULL || file == NULL || (d != NONE && *nodeptr == NULL))) jc_nullptr("registerfile()");
-  LOUD(fprintf(stderr, "registerfile(direction %d)\n", d));
-
-  /* Allocate and initialize a new node for the file */
-  branch = (filetree_t *)malloc(sizeof(filetree_t));
-  if (unlikely(branch == NULL)) jc_oom("registerfile() branch");
-  branch->file = file;
-  branch->left = NULL;
-  branch->right = NULL;
-
-  /* Attach the new node to the requested branch */
-  switch (d) {
-    case LEFT:
-      (*nodeptr)->left = branch;
-      break;
-    case RIGHT:
-      (*nodeptr)->right = branch;
-      break;
-    case NONE:
-      /* For the root of the tree only */
-      *nodeptr = branch;
-      break;
-    default:
-      /* This should never ever happen */
-      fprintf(stderr, "\ninternal error: invalid direction for registerfile(), report this\n");
-      exit(EXIT_FAILURE);
-      break;
-  }
-
-  return;
-}
-
-
-/* Check two files for a match */
-static file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
-{
-  int cmpresult = 0;
-  int cantmatch = 0;
-  const jdupes_hash_t * restrict filehash;
-
-  if (unlikely(tree == NULL || file == NULL || tree->file == NULL || tree->file->d_name == NULL || file->d_name == NULL)) jc_nullptr("checkmatch()");
-  LOUD(fprintf(stderr, "checkmatch ('%s', '%s')\n", tree->file->d_name, file->d_name));
-
-  /* If device and inode fields are equal one of the files is a
-   * hard link to the other or the files have been listed twice
-   * unintentionally. We don't want to flag these files as
-   * duplicates unless the user specifies otherwise. */
-
-  /* Count the total number of comparisons requested */
-  DBG(comparisons++;)
-
-/* If considering hard linked files as duplicates, they are
- * automatically duplicates without being read further since
- * they point to the exact same inode. If we aren't considering
- * hard links as duplicates, we just return NULL. */
-
-  cmpresult = check_conditions(tree->file, file);
-  switch (cmpresult) {
-    case 2: return &tree->file;  /* linked files + -H switch */
-    case -2: return NULL;  /* linked files, no -H switch */
-    case -3:    /* user order */
-    case -4:    /* one filesystem */
-    case -5:    /* permissions */
-        cantmatch = 1;
-        cmpresult = 0;
-        break;
-    default: break;
-  }
-
-  /* Print pre-check (early) match candidates if requested */
-  if (ISFLAG(p_flags, PF_EARLYMATCH)) printf("Early match check passed:\n   %s\n   %s\n\n", file->d_name, tree->file->d_name);
-
-  /* If preliminary matching succeeded, do main file data checks */
-  if (cmpresult == 0) {
-    LOUD(fprintf(stderr, "checkmatch: starting file data comparisons\n"));
-    /* Attempt to exclude files quickly with partial file hashing */
-    if (!ISFLAG(tree->file->flags, FF_HASH_PARTIAL)) {
-      filehash = get_filehash(tree->file, PARTIAL_HASH_SIZE);
-      if (filehash == NULL) return NULL;
-
-      tree->file->filehash_partial = *filehash;
-      SETFLAG(tree->file->flags, FF_HASH_PARTIAL);
-    }
-
-    if (!ISFLAG(file->flags, FF_HASH_PARTIAL)) {
-      filehash = get_filehash(file, PARTIAL_HASH_SIZE);
-      if (filehash == NULL) return NULL;
-
-      file->filehash_partial = *filehash;
-      SETFLAG(file->flags, FF_HASH_PARTIAL);
-    }
-
-    cmpresult = HASH_COMPARE(file->filehash_partial, tree->file->filehash_partial);
-    LOUD(if (!cmpresult) fprintf(stderr, "checkmatch: partial hashes match\n"));
-    LOUD(if (cmpresult) fprintf(stderr, "checkmatch: partial hashes do not match\n"));
-    DBG(partial_hash++;)
-
-    /* Print partial hash matching pairs if requested */
-    if (cmpresult == 0 && ISFLAG(p_flags, PF_PARTIAL))
-      printf("\nPartial hashes match:\n   %s\n   %s\n\n", file->d_name, tree->file->d_name);
-
-    if (file->size <= PARTIAL_HASH_SIZE || ISFLAG(flags, F_PARTIALONLY)) {
-      if (ISFLAG(flags, F_PARTIALONLY)) { LOUD(fprintf(stderr, "checkmatch: partial only mode: treating partial hash as full hash\n")); }
-      else { LOUD(fprintf(stderr, "checkmatch: small file: copying partial hash to full hash\n")); }
-      /* filehash_partial = filehash if file is small enough */
-      if (!ISFLAG(file->flags, FF_HASH_FULL)) {
-        file->filehash = file->filehash_partial;
-        SETFLAG(file->flags, FF_HASH_FULL);
-        DBG(small_file++;)
-      }
-      if (!ISFLAG(tree->file->flags, FF_HASH_FULL)) {
-        tree->file->filehash = tree->file->filehash_partial;
-        SETFLAG(tree->file->flags, FF_HASH_FULL);
-        DBG(small_file++;)
-      }
-    } else if (cmpresult == 0) {
-//      if (ISFLAG(flags, F_SKIPHASH)) {
-//        LOUD(fprintf(stderr, "checkmatch: skipping full file hashes (F_SKIPMATCH)\n"));
-//      } else {
-        /* If partial match was correct, perform a full file hash match */
-        if (!ISFLAG(tree->file->flags, FF_HASH_FULL)) {
-          filehash = get_filehash(tree->file, 0);
-          if (filehash == NULL) return NULL;
-
-          tree->file->filehash = *filehash;
-          SETFLAG(tree->file->flags, FF_HASH_FULL);
-        }
-
-        if (!ISFLAG(file->flags, FF_HASH_FULL)) {
-          filehash = get_filehash(file, 0);
-          if (filehash == NULL) return NULL;
-
-          file->filehash = *filehash;
-          SETFLAG(file->flags, FF_HASH_FULL);
-        }
-
-        /* Full file hash comparison */
-        cmpresult = HASH_COMPARE(file->filehash, tree->file->filehash);
-        LOUD(if (!cmpresult) fprintf(stderr, "checkmatch: full hashes match\n"));
-        LOUD(if (cmpresult) fprintf(stderr, "checkmatch: full hashes do not match\n"));
-        DBG(full_hash++);
-//      }
-    } else {
-      DBG(partial_elim++);
-    }
-  }  /* if (cmpresult == 0) */
-
-  if ((cantmatch != 0) && (cmpresult == 0)) {
-    LOUD(fprintf(stderr, "checkmatch: rejecting because match not allowed (cantmatch = 1)\n"));
-    cmpresult = -1;
-  }
-
-  /* How the file tree works
-   *
-   * The tree is sorted by size as files arrive. If the files are the same
-   * size, they are possible duplicates and are checked for duplication.
-   * If they are not a match, the hashes are used to decide whether to
-   * continue with the file to the left or the right in the file tree.
-   * If the direction decision points to a leaf node, the duplicate scan
-   * continues down that path; if it points to an empty node, the current
-   * file is attached to the file tree at that point.
-   *
-   * This allows for quickly finding files of the same size by avoiding
-   * tree branches with differing size groups.
-   */
-  if (cmpresult < 0) {
-    if (tree->left != NULL) {
-      LOUD(fprintf(stderr, "checkmatch: recursing tree: left\n"));
-      return checkmatch(tree->left, file);
-    } else {
-      LOUD(fprintf(stderr, "checkmatch: registering file: left\n"));
-      registerfile(&tree, LEFT, file);
-      return NULL;
-    }
-  } else if (cmpresult > 0) {
-    if (tree->right != NULL) {
-      LOUD(fprintf(stderr, "checkmatch: recursing tree: right\n"));
-      return checkmatch(tree->right, file);
-    } else {
-      LOUD(fprintf(stderr, "checkmatch: registering file: right\n"));
-      registerfile(&tree, RIGHT, file);
-      return NULL;
-    }
-  } else {
-    /* All compares matched */
-    DBG(partial_to_full++;)
-    LOUD(fprintf(stderr, "checkmatch: files appear to match based on hashes\n"));
-    if (ISFLAG(p_flags, PF_FULLHASH)) printf("Full hashes match:\n   %s\n   %s\n\n", file->d_name, tree->file->d_name);
-    return &tree->file;
-  }
-  /* Fall through - should never be reached */
-  return NULL;
-}
-
-
-/* Do a byte-by-byte comparison in case two different files produce the
-   same signature. Unlikely, but better safe than sorry. */
-static inline int confirmmatch(FILE * const restrict file1, FILE * const restrict file2, const off_t size)
-{
-  static char *c1 = NULL, *c2 = NULL;
-  size_t r1, r2;
-  off_t bytes = 0;
-
-  if (unlikely(file1 == NULL || file2 == NULL)) jc_nullptr("confirmmatch()");
-  LOUD(fprintf(stderr, "confirmmatch running\n"));
-
-  /* Allocate on first use; OOM if either is ever NULLed */
-  if (!c1) {
-    c1 = (char *)malloc(auto_chunk_size);
-    c2 = (char *)malloc(auto_chunk_size);
-  }
-  if (unlikely(!c1 || !c2)) jc_oom("confirmmatch() c1/c2");
-
-  fseek(file1, 0, SEEK_SET);
-  fseek(file2, 0, SEEK_SET);
-
-  do {
-    if (interrupt) return 0;
-    r1 = fread(c1, sizeof(char), auto_chunk_size, file1);
-    r2 = fread(c2, sizeof(char), auto_chunk_size, file2);
-
-    if (r1 != r2) return 0; /* file lengths are different */
-    if (memcmp (c1, c2, r1)) return 0; /* file contents are different */
-
-    bytes += (off_t)r1;
-    if (jc_alarm_ring != 0) {
-      jc_alarm_ring = 0;
-      update_phase2_progress("confirm", (int)((bytes * 100) / size));
-    }
-  } while (r2);
-
-  return 1;
-}
-
-
-/* Count the following statistics:
-   - Maximum number of files in a duplicate set (length of longest dupe chain)
-   - Number of non-zero-length files that have duplicates (if n_files != NULL)
-   - Total number of duplicate file sets (groups) */
-unsigned int get_max_dupes(const file_t *files, unsigned int * const restrict max,
-                unsigned int * const restrict n_files) {
-  unsigned int groups = 0;
-
-  if (unlikely(files == NULL || max == NULL)) jc_nullptr("get_max_dupes()");
-  LOUD(fprintf(stderr, "get_max_dupes(%p, %p, %p)\n", (const void *)files, (void *)max, (void *)n_files));
-
-  *max = 0;
-  if (n_files) *n_files = 0;
-
-  while (files) {
-    unsigned int n_dupes;
-    if (ISFLAG(files->flags, FF_HAS_DUPES)) {
-      groups++;
-      if (n_files && files->size) (*n_files)++;
-      n_dupes = 1;
-      for (file_t *curdupe = files->duplicates; curdupe; curdupe = curdupe->duplicates) n_dupes++;
-      if (n_dupes > *max) *max = n_dupes;
-    }
-    files = files->next;
-  }
-  return groups;
-}
-
-
-static void registerpair(file_t **matchlist, file_t *newmatch, int (*comparef)(file_t *f1, file_t *f2))
-{
-  file_t *traverse;
-  file_t *back;
-
-  /* NULL pointer sanity checks */
-  if (unlikely(matchlist == NULL || newmatch == NULL || comparef == NULL)) jc_nullptr("registerpair()");
-  LOUD(fprintf(stderr, "registerpair: '%s', '%s'\n", (*matchlist)->d_name, newmatch->d_name);)
-
-#ifndef NO_ERRORONDUPE
-  if (ISFLAG(a_flags, FA_ERRORONDUPE)) {
-    if (!ISFLAG(flags, F_HIDEPROGRESS)) fprintf(stderr, "\r");
-    fprintf(stderr, "Exiting based on user request (-E); duplicates found:\n");
-    printf("%s\n%s\n", (*matchlist)->d_name, newmatch->d_name);
-    exit(255);
-  }
-#endif
-
-  SETFLAG((*matchlist)->flags, FF_HAS_DUPES);
-  back = NULL;
-  traverse = *matchlist;
-
-  /* FIXME: This needs to be changed! As it currently stands, the compare
-   * function only runs on a pair as it is registered and future pairs can
-   * mess up the sort order. A separate sorting function should happen before
-   * the dupe chain is acted upon rather than while pairs are registered. */
-  while (traverse) {
-    if (comparef(newmatch, traverse) <= 0) {
-      newmatch->duplicates = traverse;
-
-      if (!back) {
-        *matchlist = newmatch; /* update pointer to head of list */
-        SETFLAG(newmatch->flags, FF_HAS_DUPES);
-        CLEARFLAG(traverse->flags, FF_HAS_DUPES); /* flag is only for first file in dupe chain */
-      } else back->duplicates = newmatch;
-
-      break;
-    } else {
-      if (traverse->duplicates == 0) {
-        traverse->duplicates = newmatch;
-        if (!back) SETFLAG(traverse->flags, FF_HAS_DUPES);
-
-        break;
-      }
-    }
-
-    back = traverse;
-    traverse = traverse->duplicates;
-  }
-  return;
-}
-
 
 
 #ifdef UNICODE
@@ -972,7 +597,7 @@ skip_partialonly_noise:
     exit(EXIT_FAILURE);
   }
 
-#ifdef ENABLE_DEDUPE
+#if defined ENABLE_DEDUPE && !defined NO_HARDLINKS
   if (ISFLAG(flags, F_CONSIDERHARDLINKS) && ISFLAG(a_flags, FA_DEDUPEFILES))
     fprintf(stderr, "warning: option --dedupe overrides the behavior of --hardlinks\n");
 #endif
@@ -1024,7 +649,7 @@ skip_partialonly_noise:
 
     /* F_RECURSE is not set for directories before --recurse: */
     for (int x = optind; x < firstrecurse; x++) {
-      if (interrupt) break;
+      if (unlikely(interrupt)) goto interrupt_exit;
       jc_slash_convert(argv[x]);
       loaddir(argv[x], &files, 0);
       user_item_count++;
@@ -1034,14 +659,14 @@ skip_partialonly_noise:
     SETFLAG(flags, F_RECURSE);
 
     for (int x = firstrecurse; x < argc; x++) {
-      if (interrupt) break;
+      if (unlikely(interrupt)) goto interrupt_exit;
       jc_slash_convert(argv[x]);
       loaddir(argv[x], &files, 1);
       user_item_count++;
     }
   } else {
     for (int x = optind; x < argc; x++) {
-      if (interrupt) break;
+      if (unlikely(interrupt)) goto interrupt_exit;
       jc_slash_convert(argv[x]);
       loaddir(argv[x], &files, ISFLAG(flags, F_RECURSE));
       user_item_count++;
@@ -1049,10 +674,7 @@ skip_partialonly_noise:
   }
 
   /* Abort on CTRL-C (-Z doesn't matter yet) */
-  if (interrupt) {
-    fprintf(stderr, "%s", s_interrupt);
-    exit(EXIT_FAILURE);
-  }
+  if (unlikely(interrupt)) goto interrupt_exit;
 
   /* Force a progress update */
   if (!ISFLAG(flags, F_HIDEPROGRESS)) update_phase1_progress("items");
@@ -1102,10 +724,13 @@ skip_partialonly_noise:
       /* Quick or partial-only compare will never run confirmmatch()
        * Also skip match confirmation for hard-linked files
        * (This set of comparisons is ugly, but quite efficient) */
-      if (ISFLAG(flags, F_QUICKCOMPARE) || ISFLAG(flags, F_PARTIALONLY) ||
-           (ISFLAG(flags, F_CONSIDERHARDLINKS) &&
-           (curfile->inode == (*match)->inode) &&
-           (curfile->device == (*match)->device))
+      if (ISFLAG(flags, F_QUICKCOMPARE)
+          || ISFLAG(flags, F_PARTIALONLY)
+#ifndef NO_HARDLINKS
+	  || (ISFLAG(flags, F_CONSIDERHARDLINKS)
+#endif
+          && (curfile->inode == (*match)->inode)
+          && (curfile->device == (*match)->device))
          ) {
         LOUD(fprintf(stderr, "MAIN: notice: hard linked, quick, or partial-only match (-H/-Q/-T)\n"));
 #ifndef NO_MTIME
@@ -1173,6 +798,12 @@ skip_file_scan:
   /* Stop catching CTRL+C and firing alarms */
   signal(SIGINT, SIG_DFL);
   if (!ISFLAG(flags, F_HIDEPROGRESS)) jc_stop_alarm();
+
+  if (files == NULL) {
+    printf("%s", s_no_dupes);
+    exit(exit_status);
+  }
+
 #ifndef NO_DELETE
   if (ISFLAG(a_flags, FA_DELETEFILES)) {
     if (ISFLAG(flags, F_NOPROMPT)) deletefiles(files, 0, 0);
@@ -1227,9 +858,12 @@ skip_all_scan_code:
   }
 #endif /* DEBUG */
 
-  exit(EXIT_SUCCESS);
+  exit(exit_status);
 
 error_optarg:
   fprintf(stderr, "error: option '%c' requires an argument\n", opt);
+  exit(EXIT_FAILURE);
+interrupt_exit:
+  fprintf(stderr, "%s", s_interrupt);
   exit(EXIT_FAILURE);
 }
