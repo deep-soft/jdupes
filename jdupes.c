@@ -535,10 +535,10 @@ int main(int argc, char **argv)
         fprintf(stderr, "Refusing to dedupe on a 2.x kernel; data loss could occur. Aborting.\n");
         exit(EXIT_FAILURE);
       }
+      /* Kernel-level dedupe will do the byte-for-byte check itself */
+      if (!ISFLAG(flags, F_PARTIALONLY)) SETFLAG(flags, F_QUICKCOMPARE);
 #endif /* __linux__ */
       SETFLAG(a_flags, FA_DEDUPEFILES);
-      /* btrfs will do the byte-for-byte check itself */
-      if (!ISFLAG(flags, F_PARTIALONLY)) SETFLAG(flags, F_QUICKCOMPARE);
       /* It is completely useless to dedupe zero-length extents */
       CLEARFLAG(flags, F_INCLUDEEMPTY);
 #else /* ENABLE_DEDUPE */
@@ -724,14 +724,15 @@ skip_partialonly_noise:
       /* Quick or partial-only compare will never run confirmmatch()
        * Also skip match confirmation for hard-linked files
        * (This set of comparisons is ugly, but quite efficient) */
-      if (ISFLAG(flags, F_QUICKCOMPARE)
+      if (
+             ISFLAG(flags, F_QUICKCOMPARE)
           || ISFLAG(flags, F_PARTIALONLY)
 #ifndef NO_HARDLINKS
 	  || (ISFLAG(flags, F_CONSIDERHARDLINKS)
+          &&  (curfile->inode == (*match)->inode)
+          &&  (curfile->device == (*match)->device))
 #endif
-          && (curfile->inode == (*match)->inode)
-          && (curfile->device == (*match)->device))
-         ) {
+	  ) {
         LOUD(fprintf(stderr, "MAIN: notice: hard linked, quick, or partial-only match (-H/-Q/-T)\n"));
 #ifndef NO_MTIME
         registerpair(match, curfile, (ordertype == ORDER_TIME) ? sort_pairs_by_mtime : sort_pairs_by_filename);
