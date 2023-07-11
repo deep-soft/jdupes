@@ -110,7 +110,7 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
 {
   int cmpresult = 0;
   int cantmatch = 0;
-  const jdupes_hash_t * restrict filehash;
+  const uint64_t * restrict filehash;
 
   if (unlikely(tree == NULL || file == NULL || tree->file == NULL || tree->file->d_name == NULL || file->d_name == NULL)) jc_nullptr("checkmatch()");
   LOUD(fprintf(stderr, "checkmatch ('%s', '%s')\n", tree->file->d_name, file->d_name));
@@ -149,7 +149,7 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
     LOUD(fprintf(stderr, "checkmatch: starting file data comparisons\n"));
     /* Attempt to exclude files quickly with partial file hashing */
     if (!ISFLAG(tree->file->flags, FF_HASH_PARTIAL)) {
-      filehash = get_filehash(tree->file, PARTIAL_HASH_SIZE);
+      filehash = get_filehash(tree->file, PARTIAL_HASH_SIZE, hash_algo);
       if (filehash == NULL) return NULL;
 
       tree->file->filehash_partial = *filehash;
@@ -157,7 +157,7 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
     }
 
     if (!ISFLAG(file->flags, FF_HASH_PARTIAL)) {
-      filehash = get_filehash(file, PARTIAL_HASH_SIZE);
+      filehash = get_filehash(file, PARTIAL_HASH_SIZE, hash_algo);
       if (filehash == NULL) return NULL;
 
       file->filehash_partial = *filehash;
@@ -193,7 +193,7 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
 //      } else {
         /* If partial match was correct, perform a full file hash match */
         if (!ISFLAG(tree->file->flags, FF_HASH_FULL)) {
-          filehash = get_filehash(tree->file, 0);
+          filehash = get_filehash(tree->file, 0, hash_algo);
           if (filehash == NULL) return NULL;
 
           tree->file->filehash = *filehash;
@@ -201,7 +201,7 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
         }
 
         if (!ISFLAG(file->flags, FF_HASH_FULL)) {
-          filehash = get_filehash(file, 0);
+          filehash = get_filehash(file, 0, hash_algo);
           if (filehash == NULL) return NULL;
 
           file->filehash = *filehash;

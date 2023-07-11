@@ -140,6 +140,9 @@ uintmax_t comparisons = 0;
 /* File tree head */
 static filetree_t *checktree = NULL;
 
+/* Hash algorithm (see filehash.h) */
+int hash_algo = HASH_ALGO_XXHASH2_64;
+
 /* Directory/file parameter position counter */
 unsigned int user_item_count = 1;
 
@@ -201,7 +204,8 @@ int main(int argc, char **argv)
     { "chunk-size", 1, 0, 'C' },
     { "debug", 0, 0, 'D' },
     { "delete", 0, 0, 'd' },
-    { "error-on-dupe", 0, 0, 'E' },
+    { "error-on-dupe", 0, 0, 'e' },
+    { "ext-option", 0, 0, 'E' },
     { "omit-first", 0, 0, 'f' },
     { "hard-links", 0, 0, 'H' },
     { "help", 0, 0, 'h' },
@@ -239,7 +243,7 @@ int main(int argc, char **argv)
  #define GETOPT getopt
 #endif
 
-#define GETOPT_STRING "@019ABC:DdEfHhIijKLlMmNnOo:P:pQqRrSsTtUuVvX:Zz"
+#define GETOPT_STRING "@019ABC:DdEefHhIijKLlMmNnOo:P:pQqRrSsTtUuVvX:Zz"
 
   /* Verify libjodycode compatibility before going further */
   if (libjodycode_version_check(1, 0) != 0) {
@@ -343,6 +347,9 @@ int main(int argc, char **argv)
       break;
 #ifndef NO_ERRORONDUPE
     case 'E':
+      fprintf(stderr, "WARNING: -E is moving to -e in the next release!");
+      fprintf(stderr, "CHECK YOUR SCRIPTS and make the change NOW!");
+    case 'e':
       SETFLAG(a_flags, FA_ERRORONDUPE);
       break;
 #endif /* NO_ERRORONDUPE */
@@ -822,7 +829,7 @@ skip_all_scan_code:
   if (ISFLAG(flags, F_DEBUG)) {
     fprintf(stderr, "\n%d partial (+%d small) -> %d full hash -> %d full (%d partial elim) (%d hash%u fail)\n",
         partial_hash, small_file, full_hash, partial_to_full,
-        partial_elim, hash_fail, (unsigned int)sizeof(jdupes_hash_t)*8);
+        partial_elim, hash_fail, (unsigned int)sizeof(uint64_t)*8);
     fprintf(stderr, "%" PRIuMAX " total files, %" PRIuMAX " comparisons\n", filecount, comparisons);
  #ifndef NO_CHUNKSIZE
     if (manual_chunk_size > 0) fprintf(stderr, "I/O chunk size: %ld KiB (manually set)\n", manual_chunk_size >> 10);

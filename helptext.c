@@ -5,6 +5,7 @@
 #include <inttypes.h>
 
 #include <libjodycode.h>
+#include "filehash.h"
 #include "helptext.h"
 #include "jdupes.h"
 #include "version.h"
@@ -21,9 +22,6 @@ const char *feature_flags[] = {
   #endif
   #ifdef __FAST_MATH__
   "fastmath",
-  #endif
-  #ifdef USE_JODY_HASH
-  "jodyhash",
   #endif
   #ifdef LOUD_DEBUG
   "loud",
@@ -118,8 +116,9 @@ void help_text(void)
   printf(" -D --debug       \toutput debug statistics after completion\n");
 #endif
 #ifndef NO_ERRORONDUPE
-  printf(" -E --error-on-dupe\texit on any duplicate found with status code 255\n");
+  printf(" -e --error-on-dupe\texit on any duplicate found with status code 255\n");
 #endif
+  printf(" -E               \tDEPRECATED: moved to '-e'; new feature in next release\n");
   printf(" -f --omit-first  \tomit the first file in each set of matches\n");
   printf(" -h --help        \tdisplay this help message\n");
 #ifndef NO_HARDLINKS
@@ -217,8 +216,11 @@ void version_text(int short_version)
 #endif
   } else printf("%u-bit i%u", (unsigned int)(sizeof(uintptr_t) * 8),
       (unsigned int)(sizeof(long) * 8));
-  if (!short_version) printf(", linked to libjodycode %s (%s)\n", jc_version, jc_verdate);
-  else printf("\n");
+  if (!short_version) {
+    printf(", linked to libjodycode %s (%s)\n", jc_version, jc_verdate);
+    printf("Hash algorithms available:");
+    for (int i = 0; i < HASH_ALGO_COUNT; i++) printf(" %s%c", hash_algo_list[i], i == (HASH_ALGO_COUNT - 1) ? '\n' : ',');
+  } else printf("\n");
 
   printf("Compile-time feature flags:");
   if (*feature_flags != NULL) {
