@@ -1,7 +1,7 @@
 FROM gcc:bullseye as builder
 
 COPY . .
-RUN make -f ../libjodycode/Makefile
+RUN cd ../libjodycode && make
 RUN make && make install
 
 FROM debian:bullseye-slim as runner
