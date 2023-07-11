@@ -2,6 +2,7 @@ FROM alpine:latest as builder
 RUN apk update && apk add --no-cache gcc make musl-dev
 
 COPY . .
+RUN make -f ../libjodycode/Makefile
 RUN make && make install
 
 FROM alpine:latest as runner
