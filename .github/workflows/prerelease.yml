@@ -164,7 +164,7 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          mv jdupes-${{ env.VER }}-win64.zip jdupes-${{ env.VER }}-win64-${{ matrix.build }}.zip
+          mv jdupes-${{ matrix.compiler }}.zip jdupes-${{ env.VER }}-win64-${{ matrix.build }}.zip
           VER="$(cat version.h | grep '#define VER "' | cut -d\" -f2)"
           echo "VER=$VER">>$GITHUB_ENV
 
