@@ -1,9 +1,7 @@
 FROM gcc:bullseye as builder
 
 COPY . .
-RUN cd ../libjodycode && make
-RUN cd ../jdupes
-RUN make && make install
+RUN cd ../libjodycode && make && cd ../jdupes && make && make install
 
 FROM debian:bullseye-slim as runner
 
