@@ -1,5 +1,5 @@
 FROM alpine:latest as builder
-RUN apk update && apk add --no-cache gcc make musl-dev
+RUN apk update && apk add --no-cache gcc make musl-dev linux-headers
 
 COPY . .
 RUN pwd
