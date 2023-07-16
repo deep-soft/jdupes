@@ -2,9 +2,7 @@ FROM alpine:latest as builder
 RUN apk update && apk add --no-cache gcc make musl-dev
 
 COPY . .
-RUN cd ../libjodycode && make
-RUN cd ../jdupes
-RUN make && make install
+RUN cd ../libjodycode && make && cd ../jdupes && make && make install
 
 FROM alpine:latest as runner
 
