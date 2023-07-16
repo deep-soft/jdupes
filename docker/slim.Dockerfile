@@ -1,8 +1,7 @@
 FROM gcc:bullseye as builder
 
 COPY . .
-RUN cd ../libjodycode
-RUN make
+RUN cd ../libjodycode && make
 RUN cd ../jdupes
 RUN make && make install
 
