@@ -182,7 +182,7 @@ jobs:
           type: 'zip'
           filename: 'jdupes-all-${{ env.VER }}-${{ matrix.build }}.zip'
           directory: './'
-          exclusions: '*.map *.pdb'
+          exclusions: '*.map *.pdb ./testdir ./testdir/*'
           recursive_exclusions: '*.map *.pdb'
           path: '.'
         # archive name is ${{ env.ZIP_RELEASE_ARCHIVE }}
