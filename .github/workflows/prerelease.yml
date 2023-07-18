@@ -180,7 +180,7 @@ jobs:
         uses: deep-soft/zip-release@v2
         with:
           type: 'zip'
-          filename: 'jdupes-all-${{ env.VER }}-${{ matrix.build }}.zip
+          filename: 'jdupes-all-${{ env.VER }}-${{ matrix.build }}.zip'
           directory: './'
           exclusions: '*.map *.pdb'
           recursive_exclusions: '*.map *.pdb'
