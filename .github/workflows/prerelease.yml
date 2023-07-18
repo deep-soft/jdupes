@@ -181,7 +181,7 @@ jobs:
         with:
           type: 'zip'
           filename: 'jdupes-all-${{ env.VER }}-${{ matrix.build }}.zip'
-          directory: './'
+          directory: '.'
           exclusions: '*.map *.pdb ./testdir ./testdir/*'
           recursive_exclusions: '*.map *.pdb'
           path: '.'
