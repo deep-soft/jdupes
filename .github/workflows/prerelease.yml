@@ -1,4 +1,4 @@
-# 2023-05-15 22:30
+# 2023-07-18 06:00
 name: Build release mingw
 
 on:
@@ -175,3 +175,23 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}-${{ env.VER }}
           files: |
             jdupes*.zip
+
+      - name: Create Zip Archive Release - all
+        uses: deep-soft/zip-release@v2
+        with:
+          type: 'zip'
+          filename: 'jdupes-all-${{ env.VER }}-${{ matrix.build }}.zip
+          directory: './'
+          exclusions: '*.map *.pdb'
+          recursive_exclusions: '*.map *.pdb'
+          path: '.'
+        # archive name is ${{ env.ZIP_RELEASE_ARCHIVE }}
+
+      - name: Publish packages all
+        continue-on-error: true
+        uses: deep-soft/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG_NAME }}-${{ env.VER }}-all
+          files: |
+            jdupes-all*.zip
+            ${{ env.ZIP_RELEASE_ARCHIVE }}
