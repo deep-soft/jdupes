@@ -149,7 +149,9 @@ jobs:
         continue-on-error: true
         shell: msys2 {0}
         run: |
-          sed --in-place 's/SUFFIX=.exe/# SUFFIX=.exe/g' Makefile
+          set -x
+          # sed --in-place 's/SUFFIX=.exe/# SUFFIX=.exe/g' Makefile
+          sed --in-place 's/PROGRAM_NAME = jdupes.exe/# PROGRAM_NAME = jdupes.exe/g' Makefile
           bash ./generate_packages.sh
           ls -l
 
