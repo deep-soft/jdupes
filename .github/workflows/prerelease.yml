@@ -117,6 +117,8 @@ jobs:
         shell: msys2 {0}
         run: |
           clang --version
+          # sed --in-place 's/SUFFIX=.exe/# SUFFIX=.exe/g' Makefile
+          sed --in-place 's/PROGRAM_NAME = jdupes.exe/PROGRAM_NAME = jdupes/g' Makefile
           make -j4 CLANG=1 USE_NEARBY_JC=1 -f Makefile static_stripped
 
       - name: Perform CodeQL Analysis
@@ -150,8 +152,6 @@ jobs:
         shell: msys2 {0}
         run: |
           set -x
-          # sed --in-place 's/SUFFIX=.exe/# SUFFIX=.exe/g' Makefile
-          sed --in-place 's/PROGRAM_NAME = jdupes.exe/PROGRAM_NAME = jdupes/g' Makefile
           sed --in-place 's/test $((E1 + E2 + E3 + E4))/# test $((E1 + E2 + E3 + E4))/g' generate_packages.sh
           bash ./generate_packages.sh
           ls -l
