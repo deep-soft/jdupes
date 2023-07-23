@@ -14,6 +14,7 @@ extern const char *hash_algo_list[HASH_ALGO_COUNT];
 #define HASH_ALGO_JODYHASH64 1
 
 #include "jdupes.h"
+#define XXH_NAMESPACE
 #include "xxhash.h"
 
 uint64_t *get_filehash(const file_t * const restrict checkfile, const size_t max_read, int algo);
