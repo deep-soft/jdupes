@@ -81,6 +81,8 @@ jobs:
         shell: msys2 {0}
         run: |
           gcc --version
+          # sed --in-place 's/SUFFIX=.exe/# SUFFIX=.exe/g' Makefile
+          sed --in-place 's/PROGRAM_NAME = jdupes.exe/PROGRAM_NAME = jdupes/g' Makefile
           make -j4 USE_NEARBY_JC=1 -f Makefile static_stripped
 
       - name: Install Clang x64
