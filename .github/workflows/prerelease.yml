@@ -151,7 +151,8 @@ jobs:
         run: |
           set -x
           # sed --in-place 's/SUFFIX=.exe/# SUFFIX=.exe/g' Makefile
-          sed --in-place 's/PROGRAM_NAME = jdupes.exe/# PROGRAM_NAME = jdupes.exe/g' Makefile
+          sed --in-place 's/PROGRAM_NAME = jdupes.exe/PROGRAM_NAME = jdupes/g' Makefile
+          sed --in-place 's/test $((E1 + E2 + E3 + E4))'/# test $((E1 + E2 + E3 + E4))/g' generate_packages.sh
           bash ./generate_packages.sh
           ls -l
 
