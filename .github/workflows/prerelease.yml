@@ -170,8 +170,6 @@ jobs:
         shell: bash
         run: |
           mv jdupes-${{ env.VER }}-win64.zip jdupes-${{ env.VER }}-win64-${{ matrix.build }}.zip
-          VER="$(cat version.h | grep '#define VER "' | cut -d\" -f2)"
-          echo "VER=$VER">>$GITHUB_ENV
 
       - name: Publish packages
         continue-on-error: true
