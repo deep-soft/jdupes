@@ -1,0 +1,180 @@
+# 2023-05-15 22:30
+name: Build release mingw
+
+on:
+#  push:
+#    branches: [ master ]
+#  pull_request:
+#    branches: [ master ]
+  workflow_dispatch:
+
+env:
+  TAG_NAME: "jdupes"
+  lib_jodycode: "https://github.com/deep-soft/libjodycode"
+
+jobs:
+  build-mingw:
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        build: [
+#                 mingw_gcc_x64_debug,
+                 mingw_gcc_x64_release,
+#                 mingw_clang_x64_debug,
+                 mingw_clang_x64_release
+               ]
+
+        include:
+#          - { build: mingw_gcc_x64_debug,     compiler: mingw_gcc,   arch: amd64, build_config: Debug }
+          - { build: mingw_gcc_x64_release,   compiler: mingw_gcc,   arch: amd64, build_config: Release }
+#          - { build: mingw_clang_x64_Debug,   compiler: mingw_clang, arch: amd64, build_config: Debug }
+          - { build: mingw_clang_x64_Release, compiler: mingw_clang, arch: amd64, build_config: Release }
+
+    steps:
+      - name: Checkout source
+        uses: deep-soft/checkout@v3
+
+      - name: Initialize CodeQL
+        if: matrix.build == 'mingw_gcc_x64_debug'
+        uses: github/codeql-action/init@v2
+        with:
+          languages: cpp
+
+      - name: Set environment for debug build
+        if: matrix.build_config  == 'Debug'
+        run: |
+          Add-Content -Path $env:GITHUB_ENV -Value "DEBUG=1"
+          Add-Content -Path $env:GITHUB_ENV -Value "USE_LLD=1"
+
+      - name: Install GCC x64
+        if: matrix.compiler  == 'mingw_gcc'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: make gcc git sed zip mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
+
+      - name: Clone libjodycode
+        if: matrix.compiler  == 'mingw_gcc'
+        continue-on-error: false
+        shell: msys2 {0}
+        run: |
+          echo "Current dir:" $PWD
+          pushd .
+          cd ../
+          echo "Current dir:" $PWD
+          ls -l
+          echo "clone: " ${{ env.lib_jodycode }}
+          git clone ${{ env.lib_jodycode }}
+          cd libjodycode
+          make
+          cd ..
+          echo "Current dir:" $PWD
+          ls -l
+          popd
+          echo "Current dir:" $PWD
+
+      - name: Build jdupes (gcc)
+        continue-on-error: true
+        if: matrix.compiler  == 'mingw_gcc'
+#        working-directory: ./
+        shell: msys2 {0}
+        run: |
+          gcc --version
+          # sed --in-place 's/SUFFIX=.exe/# SUFFIX=.exe/g' Makefile
+          sed --in-place 's/PROGRAM_NAME = jdupes.exe/PROGRAM_NAME = jdupes/g' Makefile
+          make -j4 USE_NEARBY_JC=1 -f Makefile static_stripped
+
+      - name: Install Clang x64
+        if: matrix.compiler  == 'mingw_clang'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: make git sed zip mingw-w64-x86_64-clang mingw-w64-x86_64-lld mingw-w64-x86_64-toolchain
+
+      - name: Clone libjodycode
+        if: matrix.compiler  == 'mingw_clang'
+        continue-on-error: false
+        shell: msys2 {0}
+        run: |
+          echo "Current dir:" $PWD
+          pushd .
+          cd ../
+          echo "Current dir:" $PWD
+          ls -l
+          echo "clone: " ${{ env.lib_jodycode }}
+          git clone ${{ env.lib_jodycode }}
+          cd libjodycode
+          make
+          cd ..
+          echo "Current dir:" $PWD
+          ls -l
+          popd
+          echo "Current dir:" $PWD
+
+      - name: Build jdupes (clang)
+        continue-on-error: true      
+        if: matrix.compiler  == 'mingw_clang'
+#        working-directory: ./
+        shell: msys2 {0}
+        run: |
+          clang --version
+          # sed --in-place 's/SUFFIX=.exe/# SUFFIX=.exe/g' Makefile
+          sed --in-place 's/PROGRAM_NAME = jdupes.exe/PROGRAM_NAME = jdupes/g' Makefile
+          make -j4 CLANG=1 USE_NEARBY_JC=1 -f Makefile static_stripped
+
+      - name: Perform CodeQL Analysis
+        if: matrix.build == 'mingw_gcc_x64_debug'
+        uses: github/codeql-action/analyze@v2
+
+      - name: List files and create zip archive
+        continue-on-error: true
+        run: |
+          dir ./
+          7z a jdupes-${{ matrix.compiler }}.zip jdupes*.exe CHANGES.txt LICENSE.txt README.md
+          dir ./
+
+      - name: Upload zip
+        continue-on-error: true
+        uses: deep-soft/upload-artifact@main
+        with:
+          name: jdupes-${{ matrix.compiler }}.zip
+          path: jdupes-${{ matrix.compiler }}.zip
+
+      - name: Publish
+        continue-on-error: true
+        uses: deep-soft/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          files: |
+            jdupes-${{ matrix.compiler }}.zip
+
+      - name: Generate packages
+        continue-on-error: true
+        shell: msys2 {0}
+        run: |
+          set -x
+          sed --in-place 's/test $((E1 + E2 + E3 + E4))/# test $((E1 + E2 + E3 + E4))/g' generate_packages.sh
+          bash ./generate_packages.sh
+          ls -l
+
+      - name: Get version
+        continue-on-error: true
+        shell: bash
+        run: |
+          VER="$(cat version.h | grep '#define VER "' | cut -d\" -f2)"
+          echo "VER=$VER">>$GITHUB_ENV
+
+      - name: Rename zip file
+        continue-on-error: true
+        shell: bash
+        run: |
+          mv jdupes-${{ env.VER }}-win64.zip jdupes-${{ env.VER }}-win64-${{ matrix.build }}.zip
+
+      - name: Publish packages
+        continue-on-error: true
+        uses: deep-soft/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG_NAME }}-${{ env.VER }}
+          files: |
+            jdupes*.zip
