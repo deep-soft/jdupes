@@ -14,6 +14,9 @@
 #include "jdupes.h"
 #include "checks.h"
 #include "filestat.h"
+#ifndef NO_HASHDB
+ #include "hashdb.h"
+#endif
 #include "progress.h"
 #include "interrupt.h"
 #ifndef NO_TRAVCHECK
@@ -128,7 +131,7 @@ void loaddir(const char * const restrict dir,
     if (sf_warning == 0) {
       fprintf(stderr, "\nFile specs on command line disabled in this version for safety\n");
       fprintf(stderr, "This should be restored (and safe) in a future release\n");
-      fprintf(stderr, "See https://github.com/jbruchon/jdupes or email jody@jodybruchon.com\n");
+      fprintf(stderr, "More info at jdupes.com or email jody@jodybruchon.com\n");
       sf_warning = 1;
     }
     return; /* Remove when single file is restored */
@@ -250,6 +253,9 @@ void loaddir(const char * const restrict dir,
       if (!ISFLAG(newfile->flags, FF_IS_SYMLINK) || (ISFLAG(newfile->flags, FF_IS_SYMLINK) && ISFLAG(flags, F_FOLLOWLINKS))) {
 #else
       if (S_ISREG(newfile->mode)) {
+#endif
+#ifndef NO_HASHDB
+        if (ISFLAG(flags, F_HASHDB)) read_hashdb_entry(newfile);
 #endif
         *filelistp = newfile;
         filecount++;

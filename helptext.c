@@ -44,6 +44,9 @@ const char *feature_flags[] = {
   #ifdef NO_HARDLINKS
   "nohlink",
   #endif
+  #ifdef NO_HASHDB
+  "nohashdb",
+  #endif
   #ifdef NO_JODY_SORT
   "nojsort",
   #endif
@@ -118,7 +121,6 @@ void help_text(void)
 #ifndef NO_ERRORONDUPE
   printf(" -e --error-on-dupe\texit on any duplicate found with status code 255\n");
 #endif
-  printf(" -E               \tDEPRECATED: moved to '-e'; new feature in next release\n");
   printf(" -f --omit-first  \tomit the first file in each set of matches\n");
   printf(" -h --help        \tdisplay this help message\n");
 #ifndef NO_HARDLINKS
@@ -186,6 +188,8 @@ void help_text(void)
   printf(" -X --ext-filter=x:y\tfilter files based on specified criteria\n");
   printf("                  \tUse '-X help' for detailed extfilter help\n");
 #endif /* NO_EXTFILTER */
+  printf(" -y --hash-db=file\tuse a hash database text file to speed up repeat runs\n");
+  printf("                  \tPassing '-y .' will expand to  '-y jdupes_hashdb.txt'\n");
   printf(" -z --zero-match  \tconsider zero-length files to be duplicates\n");
   printf(" -Z --soft-abort  \tIf the user aborts (i.e. CTRL-C) act on matches so far\n");
 #ifndef ON_WINDOWS
@@ -251,7 +255,7 @@ void version_text(int short_version)
   printf("SOFTWARE.\n");
   printf("\nIf you find this software useful, please consider financially supporting\n");
   printf("its development through the author's home page: https://www.jodybruchon.com/\n");
-  printf("Report bugs and get the latest releases: https://github.com/jbruchon/jdupes\n");
+  printf("Report bugs, get new releases, or learn about jdupes: https://www.jdupes.com/\n");
 #else
   (void)short_version;
   printf("\nBuilt with no help text. You're on your own.\n");

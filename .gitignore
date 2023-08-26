@@ -23,6 +23,7 @@
 /jdupes-standalone
 /jdupes-*-*/
 /jdupes-*-*.zip
+/jdupes_hashdb.txt
 /*.pkg.tar.*
 test_temp
 output.log
@@ -45,6 +46,7 @@ core
 *.gcda
 *.gcno
 *.gcov
+cachegrind.out.*
 
 # Mac OS
 .DS_Store

@@ -165,6 +165,7 @@ extern uint64_t flags, a_flags, p_flags;
 #define F_NOTRAVCHECK		(1ULL << 18)
 #define F_SKIPHASH		(1ULL << 19)
 #define F_BENCHMARKSTOP		(1ULL << 29)
+#define F_HASHDB		(1ULL << 30)
 
 #define F_LOUD			(1ULL << 62)
 #define F_DEBUG			(1ULL << 63)
@@ -190,6 +191,7 @@ extern uint64_t flags, a_flags, p_flags;
 #define FF_HAS_DUPES		(1U << 3)
 #define FF_IS_SYMLINK		(1U << 4)
 #define FF_NOT_UNIQUE		(1U << 5)
+#define FF_HASHDB_DIRTY		(1U << 5)
 
 /* Extra print flags */
 #define PF_PARTIAL		(1U << 0)
@@ -210,13 +212,13 @@ typedef struct _file {
   struct _file *duplicates;
   struct _file *next;
   char *d_name;
-  uint32_t flags;  /* Status flags */
-  jdupes_mode_t mode;
-  off_t size;
-  dev_t device;
-  jdupes_ino_t inode;
   uint64_t filehash_partial;
   uint64_t filehash;
+  uint32_t flags;  /* Status flags */
+  jdupes_mode_t mode;
+  jdupes_ino_t inode;
+  off_t size;
+  dev_t device;
 #ifndef NO_MTIME
   time_t mtime;
 #endif

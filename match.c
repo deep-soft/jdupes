@@ -13,6 +13,9 @@
 #include "likely_unlikely.h"
 #include "checks.h"
 #include "filehash.h"
+#ifndef NO_HASHDB
+ #include "hashdb.h"
+#endif
 #include "interrupt.h"
 #include "match.h"
 #include "progress.h"
@@ -30,7 +33,7 @@ void registerpair(file_t **matchlist, file_t *newmatch, int (*comparef)(file_t *
 #ifndef NO_ERRORONDUPE
   if (ISFLAG(a_flags, FA_ERRORONDUPE)) {
     if (!ISFLAG(flags, F_HIDEPROGRESS)) fprintf(stderr, "\r");
-    fprintf(stderr, "Exiting based on user request (-E); duplicates found:\n");
+    fprintf(stderr, "Exiting based on user request (-e); duplicates found:\n");
     printf("%s\n%s\n", (*matchlist)->d_name, newmatch->d_name);
     exit(255);
   }
@@ -156,7 +159,7 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
       if (filehash == NULL) return NULL;
 
       tree->file->filehash_partial = *filehash;
-      SETFLAG(tree->file->flags, FF_HASH_PARTIAL);
+      SETFLAG(tree->file->flags, FF_HASH_PARTIAL | FF_HASHDB_DIRTY);
     }
 
     if (!ISFLAG(file->flags, FF_HASH_PARTIAL)) {
@@ -164,7 +167,7 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
       if (filehash == NULL) return NULL;
 
       file->filehash_partial = *filehash;
-      SETFLAG(file->flags, FF_HASH_PARTIAL);
+      SETFLAG(file->flags, FF_HASH_PARTIAL | FF_HASHDB_DIRTY);
     }
 
     cmpresult = HASH_COMPARE(file->filehash_partial, tree->file->filehash_partial);
@@ -182,12 +185,12 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
       /* filehash_partial = filehash if file is small enough */
       if (!ISFLAG(file->flags, FF_HASH_FULL)) {
         file->filehash = file->filehash_partial;
-        SETFLAG(file->flags, FF_HASH_FULL);
+        SETFLAG(file->flags, FF_HASH_FULL | FF_HASHDB_DIRTY);
         DBG(small_file++;)
       }
       if (!ISFLAG(tree->file->flags, FF_HASH_FULL)) {
         tree->file->filehash = tree->file->filehash_partial;
-        SETFLAG(tree->file->flags, FF_HASH_FULL);
+        SETFLAG(tree->file->flags, FF_HASH_FULL | FF_HASHDB_DIRTY);
         DBG(small_file++;)
       }
     } else if (cmpresult == 0) {
@@ -200,7 +203,7 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
           if (filehash == NULL) return NULL;
 
           tree->file->filehash = *filehash;
-          SETFLAG(tree->file->flags, FF_HASH_FULL);
+          SETFLAG(tree->file->flags, FF_HASH_FULL | FF_HASHDB_DIRTY);
         }
 
         if (!ISFLAG(file->flags, FF_HASH_FULL)) {
@@ -208,7 +211,7 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
           if (filehash == NULL) return NULL;
 
           file->filehash = *filehash;
-          SETFLAG(file->flags, FF_HASH_FULL);
+          SETFLAG(file->flags, FF_HASH_FULL | FF_HASHDB_DIRTY);
         }
 
         /* Full file hash comparison */
@@ -221,6 +224,20 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
       DBG(partial_elim++);
     }
   }  /* if (cmpresult == 0) */
+
+  /* Add to hash database */
+#ifndef NO_HASHDB
+  if (ISFLAG(flags, F_HASHDB)) {
+    if (ISFLAG(file->flags, FF_HASHDB_DIRTY)) {
+      CLEARFLAG(file->flags, FF_HASHDB_DIRTY);
+      add_hashdb_entry(NULL, 0, file);
+  }
+    if (ISFLAG(tree->file->flags, FF_HASHDB_DIRTY)) {
+      CLEARFLAG(tree->file->flags, FF_HASHDB_DIRTY);
+      add_hashdb_entry(NULL, 0, tree->file);
+    }
+ }
+#endif
 
   if ((cantmatch != 0) && (cmpresult == 0)) {
     LOUD(fprintf(stderr, "checkmatch: rejecting because match not allowed (cantmatch = 1)\n"));

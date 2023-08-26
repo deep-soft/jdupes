@@ -13,6 +13,9 @@
 
 #include <libjodycode.h>
 #include "act_linkfiles.h"
+#ifndef NO_HASHDB
+ #include "hashdb.h"
+#endif
 
 #ifdef UNICODE
  static wpath_t wname, wname2;
@@ -387,6 +390,13 @@ void linkfiles(file_t *files, const int linktype, const int only_current)
             }
             jc_fwprint(stdout, dupelist[x]->d_name, 1);
           }
+#ifndef NO_HASHDB
+          /* Delete the hashdb entry for new hard/symbolic links */
+          if (linktype != 2 && ISFLAG(flags, F_HASHDB)) {
+            dupelist[x]->mtime = 0;
+            add_hashdb_entry(NULL, 0, dupelist[x]);
+          }
+#endif
         } else {
           /* The link failed. Warn the user and put the link target back */
           exit_status = EXIT_FAILURE;
@@ -444,7 +454,9 @@ void linkfiles(file_t *files, const int linktype, const int only_current)
       }
       if (!ISFLAG(flags, F_HIDEPROGRESS)) printf("\n");
     }
+#if !defined NO_SYMLINKS || defined ENABLE_CLONEFILE_LINK
 linkfile_loop:
+#endif
     if (only_current == 1) break;
     files = files->next;
   }

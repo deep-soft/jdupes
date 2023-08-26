@@ -30,13 +30,14 @@ INSTALL_PROGRAM = $(INSTALL) -m 0755
 INSTALL_DATA    = $(INSTALL) -m 0644
 
 # Main object files
+OBJS += hashdb.o
 OBJS += args.o checks.o dumpflags.o extfilter.o filehash.o filestat.o jdupes.o helptext.o
 OBJS += interrupt.o libjodycode_check.o loaddir.o match.o progress.o sort.o travcheck.o
 OBJS += act_deletefiles.o act_linkfiles.o act_printmatches.o act_summarize.o act_printjson.o
 
 # Configuration section
 COMPILER_OPTIONS = -Wall -Wwrite-strings -Wcast-align -Wstrict-aliasing -Wstrict-prototypes -Wpointer-arith -Wundef
-COMPILER_OPTIONS += -Wshadow -Wfloat-equal -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wconversion -Wunreachable-code -Wformat=2
+COMPILER_OPTIONS += -Wshadow -Wfloat-equal -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wunreachable-code -Wformat=2
 COMPILER_OPTIONS += -std=gnu11 -D_FILE_OFFSET_BITS=64 -fstrict-aliasing -pipe
 COMPILER_OPTIONS += -DNO_ATIME
 
@@ -51,7 +52,7 @@ endif
 ifdef BARE_BONES
  LOW_MEMORY = 1
  COMPILER_OPTIONS += -DNO_DELETE -DNO_TRAVCHECK -DBARE_BONES -DNO_ERRORONDUPE
- COMPILER_OPTIONS += -DNO_HELPTEXT -DCHUNK_SIZE=4096 -DPATHBUF_SIZE=1024
+ COMPILER_OPTIONS += -DNO_HASHDB -DNO_HELPTEXT -DCHUNK_SIZE=4096 -DPATHBUF_SIZE=1024
 endif
 
 # Low memory mode
@@ -135,7 +136,7 @@ endif
 
 # Use jody_hash instead of xxHash if requested
 ifdef USE_JODY_HASH
- COMPILER_OPTIONS += -DUSE_JODY_HASH
+ COMPILER_OPTIONS += -DUSE_JODY_HASH -DNO_XXHASH2
  OBJS_CLEAN += xxhash.o
  else
  ifndef EXTERNAL_HASH_LIB

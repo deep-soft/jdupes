@@ -50,6 +50,9 @@
 #endif
 #include "filehash.h"
 #include "filestat.h"
+#ifndef NO_HASHDB
+ #include "hashdb.h"
+#endif
 #include "helptext.h"
 #include "loaddir.h"
 #include "match.h"
@@ -141,7 +144,11 @@ uintmax_t comparisons = 0;
 static filetree_t *checktree = NULL;
 
 /* Hash algorithm (see filehash.h) */
+#ifdef USE_JODY_HASH
+int hash_algo = HASH_ALGO_JODYHASH64;
+#else
 int hash_algo = HASH_ALGO_XXHASH2_64;
+#endif
 
 /* Directory/file parameter position counter */
 unsigned int user_item_count = 1;
@@ -191,6 +198,12 @@ int main(int argc, char **argv)
   static struct utsname utsname;
  #endif /* __linux__ */
 #endif
+#ifndef NO_HASHDB
+  char *hashdb_name = NULL;
+  int hdblen;
+  int64_t hdbsize;
+  uint64_t hdbout;
+#endif
 
 #ifndef NO_GETOPT_LONG
   static const struct option long_options[] =
@@ -234,6 +247,7 @@ int main(int argc, char **argv)
     { "print-unique", 0, 0, 'u' },
     { "version", 0, 0, 'v' },
     { "ext-filter", 1, 0, 'X' },
+    { "hash-db", 1, 0, 'y' },
     { "soft-abort", 0, 0, 'Z' },
     { "zero-match", 0, 0, 'z' },
     { NULL, 0, 0, 0 }
@@ -243,7 +257,7 @@ int main(int argc, char **argv)
  #define GETOPT getopt
 #endif
 
-#define GETOPT_STRING "@019ABC:DdEefHhIijKLlMmNnOo:P:pQqRrSsTtUuVvX:Zz"
+#define GETOPT_STRING "@019ABC:DdEefHhIijKLlMmNnOo:P:pQqRrSsTtUuVvX:y:Zz"
 
   /* Verify libjodycode compatibility before going further */
   if (libjodycode_version_check(1, 0) != 0) {
@@ -320,6 +334,28 @@ int main(int argc, char **argv)
     case 'A':
       SETFLAG(flags, F_EXCLUDEHIDDEN);
       break;
+#ifdef ENABLE_DEDUPE
+    case 'B':
+#ifdef __linux__
+      /* Refuse to dedupe on 2.x kernels; they could damage user data */
+      if (uname(&utsname)) {
+        fprintf(stderr, "Failed to get kernel version! Aborting.\n");
+        exit(EXIT_FAILURE);
+      }
+      LOUD(fprintf(stderr, "dedupefiles: uname got release '%s'\n", utsname.release));
+      if (*(utsname.release) == '2' && *(utsname.release + 1) == '.') {
+        fprintf(stderr, "Refusing to dedupe on a 2.x kernel; data loss could occur. Aborting.\n");
+        exit(EXIT_FAILURE);
+      }
+      /* Kernel-level dedupe will do the byte-for-byte check itself */
+      if (!ISFLAG(flags, F_PARTIALONLY)) SETFLAG(flags, F_QUICKCOMPARE);
+#endif /* __linux__ */
+      SETFLAG(a_flags, FA_DEDUPEFILES);
+      /* It is completely useless to dedupe zero-length extents */
+      CLEARFLAG(flags, F_INCLUDEEMPTY);
+      LOUD(fprintf(stderr, "opt: CoW/block-level deduplication enabled (--dedupe)\n");)
+      break;
+#endif /* ENABLE_DEDUPE */
 #ifndef NO_CHUNKSIZE
     case 'C':
       manual_chunk_size = (strtol(optarg, NULL, 10) & 0x0ffffffcL) << 10;  /* Align to 4K sizes */
@@ -347,9 +383,9 @@ int main(int argc, char **argv)
       break;
 #ifndef NO_ERRORONDUPE
     case 'E':
-      fprintf(stderr, "WARNING: -E is moving to -e in the next release!");
-      fprintf(stderr, "CHECK YOUR SCRIPTS and make the change NOW!");
-      SETFLAG(a_flags, FA_ERRORONDUPE);
+      fprintf(stderr, "The -E option has been moved to -e as threatened in 1.26.1!\n");
+      fprintf(stderr, "Fix whatever used -E and try again. This is not a bug. Exiting.\n");
+      exit(EXIT_FAILURE);
       break;
     case 'e':
       SETFLAG(a_flags, FA_ERRORONDUPE);
@@ -361,7 +397,7 @@ int main(int argc, char **argv)
       break;
     case 'h':
       help_text();
-      exit(EXIT_FAILURE);
+      exit(EXIT_SUCCESS);
 #ifndef NO_HARDLINKS
     case 'H':
       SETFLAG(flags, F_CONSIDERHARDLINKS);
@@ -415,6 +451,18 @@ int main(int argc, char **argv)
       LOUD(fprintf(stderr, "opt: delete files without prompting (--noprompt)\n");)
       break;
 #endif /* NO_DELETE */
+    case 'o':
+#ifndef NO_MTIME  /* Remove if new order types are added! */
+      if (!jc_strncaseeq("name", optarg, 5)) {
+        ordertype = ORDER_NAME;
+      } else if (!jc_strncaseeq("time", optarg, 5)) {
+        ordertype = ORDER_TIME;
+      } else {
+        fprintf(stderr, "invalid value for --order: '%s'\n", optarg);
+        exit(EXIT_FAILURE);
+      }
+#endif /* NO_MTIME */
+      break;
     case 'p':
       SETFLAG(flags, F_PERMISSIONS);
       LOUD(fprintf(stderr, "opt: permissions must also match (--permissions)\n");)
@@ -434,7 +482,6 @@ int main(int argc, char **argv)
       break;
     case 'Q':
       SETFLAG(flags, F_QUICKCOMPARE);
-      fprintf(stderr, "\nBIG FAT WARNING: -Q/--quick MAY BE DANGEROUS! Read the manual!\n\n");
       LOUD(fprintf(stderr, "opt: byte-for-byte safety check disabled (--quick)\n");)
       break;
     case 'r':
@@ -466,6 +513,10 @@ int main(int argc, char **argv)
       SETFLAG(flags, F_NOTRAVCHECK);
       LOUD(fprintf(stderr, "opt: double-traversal safety check disabled (--no-trav-check)\n");)
       break;
+    case 'v':
+    case 'V':
+      version_text(0);
+      exit(EXIT_SUCCESS);
 #ifndef NO_SYMLINKS
     case 'l':
       SETFLAG(a_flags, FA_MAKESYMLINKS);
@@ -485,6 +536,23 @@ int main(int argc, char **argv)
       add_extfilter(optarg);
       break;
 #endif /* NO_EXTFILTER */
+#ifndef NO_HASHDB
+    case 'y':
+      SETFLAG(flags, F_HASHDB);
+      LOUD(fprintf(stderr, "opt: use a hash database (--hash-db)\n");)
+      fprintf(stderr, "\nWARNING: THE HASH DATABASE FEATURE IS UNDER HEAVY DEVELOPMENT! It functions\n");
+      fprintf(stderr,   "         but there are LOTS OF QUIRKS. The behavior is not fully documented\n");
+      fprintf(stderr,   "         yet and basic 'smarts' have not been implemented. USE THIS FEATURE\n");
+      fprintf(stderr,   "         AT YOUR OWN RISK. Report hashdb issues to jody@jodybruchon.com\n\n");
+      hdbsize = 0;
+      hdblen = strlen(optarg) + 1;
+      if (hdblen < 24) hdblen = 24;
+      hashdb_name = (char *)malloc(hdblen);
+      if (hashdb_name == NULL) jc_nullptr("hashdb");
+      if (strcmp(optarg, ".") == 0) strcpy(hashdb_name, "jdupes_hashdb.txt");
+      else strcpy(hashdb_name, optarg);
+      break;
+#endif /* NO_HASHDB */
     case 'z':
       SETFLAG(flags, F_INCLUDEEMPTY);
       LOUD(fprintf(stderr, "opt: zero-length files count as matches (--zero-match)\n");)
@@ -498,47 +566,6 @@ int main(int argc, char **argv)
       SETFLAG(flags, F_DEBUG | F_LOUD | F_HIDEPROGRESS);
 #endif
       LOUD(fprintf(stderr, "opt: loud debugging enabled, hope you can handle it (--loud)\n");)
-      break;
-    case 'v':
-    case 'V':
-      version_text(0);
-      exit(EXIT_SUCCESS);
-    case 'o':
-#ifndef NO_MTIME  /* Remove if new order types are added! */
-      if (!jc_strncaseeq("name", optarg, 5)) {
-        ordertype = ORDER_NAME;
-      } else if (!jc_strncaseeq("time", optarg, 5)) {
-        ordertype = ORDER_TIME;
-      } else {
-        fprintf(stderr, "invalid value for --order: '%s'\n", optarg);
-        exit(EXIT_FAILURE);
-      }
-#endif /* NO_MTIME */
-      break;
-    case 'B':
-#ifdef ENABLE_DEDUPE
-#ifdef __linux__
-      /* Refuse to dedupe on 2.x kernels; they could damage user data */
-      if (uname(&utsname)) {
-        fprintf(stderr, "Failed to get kernel version! Aborting.\n");
-        exit(EXIT_FAILURE);
-      }
-      LOUD(fprintf(stderr, "dedupefiles: uname got release '%s'\n", utsname.release));
-      if (*(utsname.release) == '2' && *(utsname.release + 1) == '.') {
-        fprintf(stderr, "Refusing to dedupe on a 2.x kernel; data loss could occur. Aborting.\n");
-        exit(EXIT_FAILURE);
-      }
-      /* Kernel-level dedupe will do the byte-for-byte check itself */
-      if (!ISFLAG(flags, F_PARTIALONLY)) SETFLAG(flags, F_QUICKCOMPARE);
-#endif /* __linux__ */
-      SETFLAG(a_flags, FA_DEDUPEFILES);
-      /* It is completely useless to dedupe zero-length extents */
-      CLEARFLAG(flags, F_INCLUDEEMPTY);
-#else /* ENABLE_DEDUPE */
-      fprintf(stderr, "This program was built without dedupe support\n");
-      exit(EXIT_FAILURE);
-#endif /* ENABLE_DEDUPE */
-      LOUD(fprintf(stderr, "opt: CoW/block-level deduplication enabled (--dedupe)\n");)
       break;
 
     default:
@@ -621,6 +648,15 @@ skip_partialonly_noise:
 
   /* Catch CTRL-C */
   signal(SIGINT, catch_interrupt);
+
+#ifndef NO_HASHDB
+  if (ISFLAG(flags, F_HASHDB)) {
+    if (!ISFLAG(flags, F_HIDEPROGRESS)) fprintf(stderr, "Loading hash database...");
+    hdbsize = load_hash_database(hashdb_name);
+    if (hdbsize < 0) goto error_load_hashdb;
+    if (!ISFLAG(flags, F_HIDEPROGRESS)) fprintf(stderr, "%" PRId64 " entries loaded.\n", hdbsize);
+  }
+#endif /* NO_HASHDB */
 
   /* Progress indicator every second */
   if (!ISFLAG(flags, F_HIDEPROGRESS)) {
@@ -721,11 +757,11 @@ skip_partialonly_noise:
              ISFLAG(flags, F_QUICKCOMPARE)
           || ISFLAG(flags, F_PARTIALONLY)
 #ifndef NO_HARDLINKS
-	  || (ISFLAG(flags, F_CONSIDERHARDLINKS)
+          || (ISFLAG(flags, F_CONSIDERHARDLINKS)
           &&  (curfile->inode == (*match)->inode)
           &&  (curfile->device == (*match)->device))
 #endif
-	  ) {
+          ) {
         LOUD(fprintf(stderr, "MAIN: notice: hard linked, quick, or partial-only match (-H/-Q/-T)\n"));
 #ifndef NO_MTIME
         registerpair(match, curfile, (ordertype == ORDER_TIME) ? sort_pairs_by_mtime : sort_pairs_by_filename);
@@ -823,6 +859,17 @@ skip_file_scan:
     summarizematches(files);
   }
 
+#ifndef NO_HASHDB
+  if (ISFLAG(flags, F_HASHDB)) {
+    hdbout = save_hash_database(hashdb_name);
+    if (!ISFLAG(flags, F_HIDEPROGRESS)) {
+      if (hdbout > 0) fprintf(stderr, "Wrote %" PRIu64 " entries to the hash database\n", hdbout);
+      else fprintf(stderr, "Hash database is OK (no changes)\n");
+    }
+  }
+  if (hashdb_name != NULL) free(hashdb_name);
+#endif
+
 #ifdef DEBUG
 skip_all_scan_code:
 #endif
@@ -857,6 +904,12 @@ skip_all_scan_code:
 error_optarg:
   fprintf(stderr, "error: option '%c' requires an argument\n", opt);
   exit(EXIT_FAILURE);
+#ifndef NO_HASHDB
+error_load_hashdb:
+  fprintf(stderr, "error: failure loading hash database '%s'\n", hashdb_name);
+  free(hashdb_name);
+  exit(EXIT_FAILURE);
+#endif
 interrupt_exit:
   fprintf(stderr, "%s", s_interrupt);
   exit(EXIT_FAILURE);
