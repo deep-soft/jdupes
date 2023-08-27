@@ -28,8 +28,9 @@ jobs:
         include:
 #          - { build: mingw_gcc_x64_debug,     compiler: mingw_gcc,   arch: amd64, build_config: Debug }
           - { build: mingw_gcc_x64_release,   compiler: mingw_gcc,   arch: amd64, build_config: Release }
+# disable clang build, need changes in makefile to use clang instead of gcc          
 #          - { build: mingw_clang_x64_Debug,   compiler: mingw_clang, arch: amd64, build_config: Debug }
-          - { build: mingw_clang_x64_Release, compiler: mingw_clang, arch: amd64, build_config: Release }
+#          - { build: mingw_clang_x64_Release, compiler: mingw_clang, arch: amd64, build_config: Release }
 
     steps:
       - name: Checkout source
