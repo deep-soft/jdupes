@@ -21,6 +21,59 @@
 #include "progress.h"
 
 
+/* Copy any hashes between entries for detected hard-linked files */
+static void cross_copy_hashes(file_t *file1, file_t *file2)
+{
+#ifndef NO_HASHDB
+  int dirty1 = 0, dirty2 = 0;
+#endif
+
+  if (file1 == NULL || file2 == NULL) jc_nullptr("cross_copy_hashes()");
+
+  if (ISFLAG(file1->flags, FF_HASH_FULL)) {
+    if (ISFLAG(file2->flags, FF_HASH_FULL)) return;
+    file2->filehash_partial = file1->filehash_partial;
+    file2->filehash = file1->filehash;
+    SETFLAG(file2->flags, FF_HASH_PARTIAL | FF_HASH_FULL);
+#ifndef NO_HASHDB
+    dirty2 = 1;
+#endif
+  } else if (ISFLAG(file2->flags, FF_HASH_FULL)) {
+    if (ISFLAG(file1->flags, FF_HASH_FULL)) return;
+    file1->filehash_partial = file2->filehash_partial;
+    file1->filehash = file2->filehash;
+    SETFLAG(file1->flags, FF_HASH_PARTIAL | FF_HASH_FULL);
+#ifndef NO_HASHDB
+    dirty1 = 1;
+#endif
+  } else if (ISFLAG(file1->flags, FF_HASH_PARTIAL)) {
+    if (ISFLAG(file2->flags, FF_HASH_PARTIAL)) return;
+    file2->filehash_partial = file1->filehash_partial;
+    SETFLAG(file2->flags, FF_HASH_PARTIAL);
+#ifndef NO_HASHDB
+    dirty2 = 1;
+#endif
+  } else if (ISFLAG(file2->flags, FF_HASH_PARTIAL)) {
+    if (ISFLAG(file1->flags, FF_HASH_PARTIAL)) return;
+    file1->filehash_partial = file2->filehash_partial;
+    SETFLAG(file1->flags, FF_HASH_PARTIAL);
+#ifndef NO_HASHDB
+    dirty1 = 1;
+#endif
+  }
+
+  /* Add to hash database */
+#ifndef NO_HASHDB
+  if (ISFLAG(flags, F_HASHDB)) {
+    if (dirty1 == 1) add_hashdb_entry(NULL, 0, file1);
+    if (dirty2 == 1) add_hashdb_entry(NULL, 0, file2);
+ }
+#endif
+
+  return;
+}
+
+
 void registerpair(file_t **matchlist, file_t *newmatch, int (*comparef)(file_t *f1, file_t *f2))
 {
   file_t *traverse;
@@ -117,6 +170,9 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
   int cmpresult = 0;
   int cantmatch = 0;
   const uint64_t * restrict filehash;
+#ifndef NO_HASHDB
+  int dirtyfile = 0, dirtytree = 0;
+#endif
 
   if (unlikely(tree == NULL || file == NULL || tree->file == NULL || tree->file->d_name == NULL || file->d_name == NULL)) jc_nullptr("checkmatch()");
   LOUD(fprintf(stderr, "checkmatch ('%s', '%s')\n", tree->file->d_name, file->d_name));
@@ -136,8 +192,12 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
 
   cmpresult = check_conditions(tree->file, file);
   switch (cmpresult) {
-    case 2: return &tree->file;  /* linked files + -H switch */
+#ifndef NO_HARDLINKS
+    case 2:
+      cross_copy_hashes(tree->file, file);
+      return &tree->file;  /* linked files + -H switch */
     case -2: return NULL;  /* linked files, no -H switch */
+#endif
     case -3:    /* user order */
     case -4:    /* one filesystem */
     case -5:    /* permissions */
@@ -159,7 +219,10 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
       if (filehash == NULL) return NULL;
 
       tree->file->filehash_partial = *filehash;
-      SETFLAG(tree->file->flags, FF_HASH_PARTIAL | FF_HASHDB_DIRTY);
+      SETFLAG(tree->file->flags, FF_HASH_PARTIAL);
+#ifndef NO_HASHDB
+      dirtytree = 1;
+#endif
     }
 
     if (!ISFLAG(file->flags, FF_HASH_PARTIAL)) {
@@ -167,7 +230,10 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
       if (filehash == NULL) return NULL;
 
       file->filehash_partial = *filehash;
-      SETFLAG(file->flags, FF_HASH_PARTIAL | FF_HASHDB_DIRTY);
+      SETFLAG(file->flags, FF_HASH_PARTIAL);
+#ifndef NO_HASHDB
+      dirtyfile = 1;
+#endif
     }
 
     cmpresult = HASH_COMPARE(file->filehash_partial, tree->file->filehash_partial);
@@ -185,12 +251,18 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
       /* filehash_partial = filehash if file is small enough */
       if (!ISFLAG(file->flags, FF_HASH_FULL)) {
         file->filehash = file->filehash_partial;
-        SETFLAG(file->flags, FF_HASH_FULL | FF_HASHDB_DIRTY);
+        SETFLAG(file->flags, FF_HASH_FULL);
+#ifndef NO_HASHDB
+	dirtyfile = 1;
+#endif
         DBG(small_file++;)
       }
       if (!ISFLAG(tree->file->flags, FF_HASH_FULL)) {
         tree->file->filehash = tree->file->filehash_partial;
-        SETFLAG(tree->file->flags, FF_HASH_FULL | FF_HASHDB_DIRTY);
+        SETFLAG(tree->file->flags, FF_HASH_FULL);
+#ifndef NO_HASHDB
+	dirtytree = 1;
+#endif
         DBG(small_file++;)
       }
     } else if (cmpresult == 0) {
@@ -203,7 +275,10 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
           if (filehash == NULL) return NULL;
 
           tree->file->filehash = *filehash;
-          SETFLAG(tree->file->flags, FF_HASH_FULL | FF_HASHDB_DIRTY);
+          SETFLAG(tree->file->flags, FF_HASH_FULL);
+#ifndef NO_HASHDB
+	  dirtytree = 1;
+#endif
         }
 
         if (!ISFLAG(file->flags, FF_HASH_FULL)) {
@@ -211,7 +286,10 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
           if (filehash == NULL) return NULL;
 
           file->filehash = *filehash;
-          SETFLAG(file->flags, FF_HASH_FULL | FF_HASHDB_DIRTY);
+          SETFLAG(file->flags, FF_HASH_FULL);
+#ifndef NO_HASHDB
+	  dirtyfile = 1;
+#endif
         }
 
         /* Full file hash comparison */
@@ -228,14 +306,8 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
   /* Add to hash database */
 #ifndef NO_HASHDB
   if (ISFLAG(flags, F_HASHDB)) {
-    if (ISFLAG(file->flags, FF_HASHDB_DIRTY)) {
-      CLEARFLAG(file->flags, FF_HASHDB_DIRTY);
-      add_hashdb_entry(NULL, 0, file);
-  }
-    if (ISFLAG(tree->file->flags, FF_HASHDB_DIRTY)) {
-      CLEARFLAG(tree->file->flags, FF_HASHDB_DIRTY);
-      add_hashdb_entry(NULL, 0, tree->file);
-    }
+    if (dirtyfile == 1) add_hashdb_entry(NULL, 0, file);
+    if (dirtytree == 1) add_hashdb_entry(NULL, 0, tree->file);
  }
 #endif
 
@@ -289,38 +361,60 @@ file_t **checkmatch(filetree_t * restrict tree, file_t * const restrict file)
 
 /* Do a byte-by-byte comparison in case two different files produce the
    same signature. Unlikely, but better safe than sorry. */
-int confirmmatch(FILE * const restrict file1, FILE * const restrict file2, const off_t size)
+int confirmmatch(const char * const restrict file1, const char * const restrict file2, const off_t size)
 {
   static char *c1 = NULL, *c2 = NULL;
+  FILE *fp1, *fp2;
   size_t r1, r2;
   off_t bytes = 0;
+  int retval = 0;
 
   if (unlikely(file1 == NULL || file2 == NULL)) jc_nullptr("confirmmatch()");
   LOUD(fprintf(stderr, "confirmmatch running\n"));
 
-  /* Allocate on first use; OOM if either is ever NULLed */
-  if (!c1) {
+  if (unlikely(c1 == NULL || c2 == NULL)) {
     c1 = (char *)malloc(auto_chunk_size);
     c2 = (char *)malloc(auto_chunk_size);
   }
-  if (unlikely(!c1 || !c2)) jc_oom("confirmmatch() c1/c2");
+  if (unlikely(c1 == NULL || c2 == NULL)) jc_oom("confirmmatch() buffers");
 
-  fseek(file1, 0, SEEK_SET);
-  fseek(file2, 0, SEEK_SET);
+#ifdef UNICODE
+  if (!M2W(file1, wstr)) fp1 = NULL;
+  else fp1 = _wfopen(wstr, FILE_MODE_RO);
+  if (!M2W(file2, wstr)) fp2 = NULL;
+  else fp2 = _wfopen(wstr, FILE_MODE_RO);
+#else
+  fp1 = fopen(file1, FILE_MODE_RO);
+  fp2 = fopen(file2, FILE_MODE_RO);
+#endif
+  if (fp1 == NULL) {
+    if (fp2 != NULL) fclose(fp2);
+    LOUD(fprintf(stderr, "confirmmatch: warning: file open failed ('%s')\n", file1);)
+    goto different;
+  }
+  if (fp2 == NULL) {
+    if (fp1 != NULL) fclose(fp1);
+    LOUD(fprintf(stderr, "confirmmatch: warning: file open failed ('%s')\n", file2);)
+    goto different;
+  }
+
+  fseek(fp1, 0, SEEK_SET);
+  fseek(fp2, 0, SEEK_SET);
 #ifdef __linux__
-  posix_fadvise(fileno(file1), 0, size, POSIX_FADV_SEQUENTIAL);
-  posix_fadvise(fileno(file1), 0, size, POSIX_FADV_WILLNEED);
-  posix_fadvise(fileno(file2), 0, size, POSIX_FADV_SEQUENTIAL);
-  posix_fadvise(fileno(file2), 0, size, POSIX_FADV_WILLNEED);
+  /* Tell Linux we will accees sequentially and soon */
+  posix_fadvise(fileno(fp1), 0, size, POSIX_FADV_SEQUENTIAL);
+  posix_fadvise(fileno(fp1), 0, size, POSIX_FADV_WILLNEED);
+  posix_fadvise(fileno(fp2), 0, size, POSIX_FADV_SEQUENTIAL);
+  posix_fadvise(fileno(fp2), 0, size, POSIX_FADV_WILLNEED);
 #endif /* __linux__ */
 
   do {
-    if (interrupt) return 0;
-    r1 = fread(c1, sizeof(char), auto_chunk_size, file1);
-    r2 = fread(c2, sizeof(char), auto_chunk_size, file2);
+    if (interrupt) goto different;
+    r1 = fread(c1, sizeof(char), auto_chunk_size, fp1);
+    r2 = fread(c2, sizeof(char), auto_chunk_size, fp2);
 
-    if (r1 != r2) return 0; /* file lengths are different */
-    if (memcmp (c1, c2, r1)) return 0; /* file contents are different */
+    if (r1 != r2) goto different; /* file lengths are different */
+    if (memcmp (c1, c2, r1)) goto different; /* file contents are different */
 
     bytes += (off_t)r1;
     if (jc_alarm_ring != 0) {
@@ -329,5 +423,14 @@ int confirmmatch(FILE * const restrict file1, FILE * const restrict file2, const
     }
   } while (r2);
 
-  return 1;
+  /* Success: return 0 */
+  goto finish_confirm;
+
+different:
+  retval = 1;
+
+finish_confirm:
+//  free(c1); free(c2);
+  fclose(fp1); fclose(fp2);
+  return retval;
 }
