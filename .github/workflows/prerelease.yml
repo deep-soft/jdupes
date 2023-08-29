@@ -22,7 +22,7 @@ jobs:
 #                 mingw_gcc_x64_debug,
                  mingw_gcc_x64_release,
 #                 mingw_clang_x64_debug,
-                 mingw_clang_x64_release
+#                 mingw_clang_x64_release
                ]
 
         include:
