@@ -31,17 +31,11 @@ extern "C" {
 #if defined _WIN32 || defined __MINGW32__
  typedef uint64_t jdupes_ino_t;
  typedef uint32_t jdupes_mode_t;
- #ifdef UNICODE
-  extern const wchar_t *FILE_MODE_RO;
- #else
-  extern const char *FILE_MODE_RO;
- #endif /* UNICODE */
 
 #else /* Not Windows */
  #include <sys/stat.h>
  typedef ino_t jdupes_ino_t;
  typedef mode_t jdupes_mode_t;
- extern const char *FILE_MODE_RO;
  #ifdef UNICODE
   #error Do not define UNICODE on non-Windows platforms.
   #undef UNICODE
@@ -64,10 +58,6 @@ extern "C" {
    #define WPATH_MAX PATHBUF_SIZE
   #endif
  #endif /* PATHBUF_SIZE */
- typedef wchar_t wpath_t[WPATH_MAX];
- #define M2W(a,b) MultiByteToWideChar(CP_UTF8, 0, a, -1, (LPWSTR)b, WPATH_MAX)
- #define W2M(a,b) WideCharToMultiByte(CP_UTF8, 0, a, -1, (LPSTR)b, WPATH_MAX, NULL, NULL)
- extern wpath_t wstr;
 #endif /* UNICODE */
 
 /* Maximum path buffer size to use; must be large enough for a path plus
